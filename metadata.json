@@ -1,0 +1,6 @@
+{
+  "name": "WEYKY",
+  "description": "An intelligent phone core and living ambient layer for Android, providing real-time device intelligence, natural language intents, and contextual awareness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

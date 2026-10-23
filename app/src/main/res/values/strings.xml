@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">WEYKY</string>
+    <string name="ask_weyky_hint">Ask WEYKY anything...</string>
+    <string name="core_status_idle">Core Ambient</string>
+</resources>

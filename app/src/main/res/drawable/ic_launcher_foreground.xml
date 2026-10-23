@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle inner dark metallic sphere glow inside the circular emblem -->
+    <path android:pathData="M54,48m-25,0a25,25 0 1,1 50,0a25,25 0 1,1 -50,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="44"
+                android:gradientRadius="26"
+                android:type="radial">
+                <item android:color="#401A365D" android:offset="0.0" />
+                <item android:color="#260A182E" android:offset="0.65" />
+                <item android:color="#00030812" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Outer Neon Cyan Bloom (Top Arc) -->
+    <path
+        android:pathData="M 32.0,33.5 A 26.5,26.5 0 0,1 76.0,33.5"
+        android:strokeWidth="3.6"
+        android:strokeColor="#4D00E5FF"
+        android:strokeLineCap="round" />
+
+    <!-- Crisp Segmented Top Arc -->
+    <path
+        android:pathData="M 32.0,33.5 A 26.5,26.5 0 0,1 76.0,33.5"
+        android:strokeWidth="1.7"
+        android:strokeColor="#FF64F4FF"
+        android:strokeLineCap="round" />
+
+    <!-- Inner Thin Top Rim Arc -->
+    <path
+        android:pathData="M 34.2,35.0 A 24.2,24.2 0 0,1 73.8,35.0"
+        android:strokeWidth="0.7"
+        android:strokeColor="#9900D4FF"
+        android:strokeLineCap="round" />
+
+    <!-- Outer Neon Cyan Bloom (Bottom Arc) -->
+    <path
+        android:pathData="M 30.8,60.8 A 26.5,26.5 0 0,0 74.2,65.2"
+        android:strokeWidth="3.6"
+        android:strokeColor="#4D00E5FF"
+        android:strokeLineCap="round" />
+
+    <!-- Crisp Segmented Bottom Arc -->
+    <path
+        android:pathData="M 30.8,60.8 A 26.5,26.5 0 0,0 74.2,65.2"
+        android:strokeWidth="1.7"
+        android:strokeColor="#FF52EEFF"
+        android:strokeLineCap="round" />
+
+    <!-- Inner Thin Bottom Rim Arc -->
+    <path
+        android:pathData="M 32.8,59.5 A 24.2,24.2 0 0,0 72.2,63.5"
+        android:strokeWidth="0.7"
+        android:strokeColor="#8000D4FF"
+        android:strokeLineCap="round" />
+
+    <!-- Left Technical Bracket Segment (Outer Stepped Armor) -->
+    <path
+        android:pathData="M 30.0,36.2 L 27.6,41.8 L 27.6,54.2 L 30.0,58.2"
+        android:strokeWidth="1.8"
+        android:strokeColor="#FF38E8FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Left Technical Bracket Inner Bar -->
+    <path
+        android:pathData="M 25.5,43.2 L 25.5,52.8"
+        android:strokeWidth="1.4"
+        android:strokeColor="#CC00D4FF"
+        android:strokeLineCap="round" />
+
+    <!-- Right Technical Bracket Segment (Outer Stepped Armor) -->
+    <path
+        android:pathData="M 78.0,36.2 L 80.4,41.8 L 80.4,54.2 L 78.0,58.2"
+        android:strokeWidth="1.8"
+        android:strokeColor="#FF38E8FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Right Technical Bracket Inner Bar -->
+    <path
+        android:pathData="M 82.5,43.2 L 82.5,52.8"
+        android:strokeWidth="1.4"
+        android:strokeColor="#CC00D4FF"
+        android:strokeLineCap="round" />
+
+    <!-- ========================================================================= -->
+    <!-- MONOGRAM PIECE 1: LEFT 'V' CHEVRON (Glowing Cyan Metallic Fill + Rim)     -->
+    <!-- ========================================================================= -->
+    <!-- Outer Neon Glow for V -->
+    <path
+        android:pathData="M 32.2,35.8 L 37.5,35.8 L 45.4,50.8 L 51.0,41.2 L 51.0,49.5 L 45.4,58.8 Z"
+        android:strokeWidth="2.4"
+        android:strokeColor="#4D00E5FF"
+        android:strokeLineJoin="round" />
+
+    <!-- V Metallic Cyan Gradient Fill -->
+    <path android:pathData="M 32.2,35.8 L 37.5,35.8 L 45.4,50.8 L 51.0,41.2 L 51.0,49.5 L 45.4,58.8 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="32"
+                android:startY="35"
+                android:endX="51"
+                android:endY="59"
+                android:type="linear">
+                <item android:color="#FF80F8FF" android:offset="0.0" />
+                <item android:color="#FF00B4D8" android:offset="0.45" />
+                <item android:color="#FF083D66" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- V Crisp Neon Cyan Edge Outline -->
+    <path
+        android:pathData="M 32.2,35.8 L 37.5,35.8 L 45.4,50.8 L 51.0,41.2 L 51.0,49.5 L 45.4,58.8 Z"
+        android:strokeWidth="0.95"
+        android:strokeColor="#FF72F8FF"
+        android:strokeLineJoin="round" />
+
+    <!-- ========================================================================= -->
+    <!-- MONOGRAM PIECE 2: CENTER UPPER PILLAR OF 'K' (Luminous Cyan Fill + Rim)   -->
+    <!-- ========================================================================= -->
+    <path
+        android:pathData="M 52.8,35.5 L 57.5,35.5 L 57.5,46.2 L 52.8,50.9 Z"
+        android:strokeWidth="2.2"
+        android:strokeColor="#4D00E5FF"
+        android:strokeLineJoin="round" />
+
+    <path android:pathData="M 52.8,35.5 L 57.5,35.5 L 57.5,46.2 L 52.8,50.9 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="55"
+                android:startY="35"
+                android:endX="55"
+                android:endY="51"
+                android:type="linear">
+                <item android:color="#FF90FAFF" android:offset="0.0" />
+                <item android:color="#FF00C4EB" android:offset="0.55" />
+                <item android:color="#FF0A4B78" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M 52.8,35.5 L 57.5,35.5 L 57.5,46.2 L 52.8,50.9 Z"
+        android:strokeWidth="0.95"
+        android:strokeColor="#FF88FAFF"
+        android:strokeLineJoin="round" />
+
+    <!-- ========================================================================= -->
+    <!-- MONOGRAM PIECE 3: RIGHT 'K' DIAGONAL & LOWER STEM (Brushed Silver + Cyan) -->
+    <!-- ========================================================================= -->
+    <!-- Outer Neon Glow for K -->
+    <path
+        android:pathData="M 52.8,53.2 L 70.2,35.8 L 76.2,35.8 L 63.2,48.8 L 76.2,62.5 L 70.0,62.5 L 59.5,51.8 L 57.5,53.8 L 57.5,62.2 L 52.8,65.5 Z"
+        android:strokeWidth="2.4"
+        android:strokeColor="#4000E5FF"
+        android:strokeLineJoin="round" />
+
+    <!-- Brushed Gunmetal Silver & Cyan Diagonal Gradient Fill -->
+    <path android:pathData="M 52.8,53.2 L 70.2,35.8 L 76.2,35.8 L 63.2,48.8 L 76.2,62.5 L 70.0,62.5 L 59.5,51.8 L 57.5,53.8 L 57.5,62.2 L 52.8,65.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="74"
+                android:startY="35"
+                android:endX="52"
+                android:endY="65"
+                android:type="linear">
+                <item android:color="#FFF1F8FC" android:offset="0.0" />
+                <item android:color="#FF8DA2B5" android:offset="0.35" />
+                <item android:color="#FF4A5D70" android:offset="0.68" />
+                <item android:color="#FF00B4D8" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- K Crisp Neon Cyan & White Edge Outline -->
+    <path
+        android:pathData="M 52.8,53.2 L 70.2,35.8 L 76.2,35.8 L 63.2,48.8 L 76.2,62.5 L 70.0,62.5 L 59.5,51.8 L 57.5,53.8 L 57.5,62.2 L 52.8,65.5 Z"
+        android:strokeWidth="0.95"
+        android:strokeColor="#FF64F4FF"
+        android:strokeLineJoin="round" />
+
+    <!-- Small Horizontal Accent Dash under K bottom-right leg (as in image) -->
+    <path
+        android:pathData="M 71.2,64.2 L 74.8,64.2"
+        android:strokeWidth="1.2"
+        android:strokeColor="#FF38E8FF"
+        android:strokeLineCap="round" />
+
+    <!-- ========================================================================= -->
+    <!-- BOTTOM TYPOGRAPHY & HORIZON LINE: "W E Y K Y" + Glowing Dot               -->
+    <!-- ========================================================================= -->
+    <!-- Letter W -->
+    <path
+        android:pathData="M 39.2,80.2 L 40.1,83.4 L 41.1,80.8 L 42.1,83.4 L 43.0,80.2"
+        android:strokeWidth="0.85"
+        android:strokeColor="#FF48E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Letter E -->
+    <path
+        android:pathData="M 48.8,80.2 L 46.8,80.2 L 46.8,83.4 L 48.8,83.4 M 46.8,81.8 L 48.4,81.8"
+        android:strokeWidth="0.85"
+        android:strokeColor="#FF48E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Letter Y -->
+    <path
+        android:pathData="M 52.6,80.2 L 54.0,81.9 L 55.4,80.2 M 54.0,81.9 L 54.0,83.4"
+        android:strokeWidth="0.85"
+        android:strokeColor="#FF48E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Letter K -->
+    <path
+        android:pathData="M 59.2,80.2 L 59.2,83.4 M 61.2,80.2 L 59.4,81.8 L 61.3,83.4"
+        android:strokeWidth="0.85"
+        android:strokeColor="#FF48E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Letter Y -->
+    <path
+        android:pathData="M 65.2,80.2 L 66.6,81.9 L 68.0,80.2 M 66.6,81.9 L 66.6,83.4"
+        android:strokeWidth="0.85"
+        android:strokeColor="#FF48E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Horizon Line Under WEYKY -->
+    <path
+        android:pathData="M 45.0,86.0 L 63.0,86.0"
+        android:strokeWidth="0.55"
+        android:strokeColor="#9900E5FF"
+        android:strokeLineCap="round" />
+
+    <!-- Glowing Cyan Dot Under Horizon Line -->
+    <path
+        android:pathData="M54,87.6m-0.75,0a0.75,0.75 0 1,1 1.5,0a0.75,0.75 0 1,1 -1.5,0"
+        android:fillColor="#FF52F4FF" />
+</vector>
