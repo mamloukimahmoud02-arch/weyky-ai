@@ -326,27 +326,16 @@ private fun PhonePortraitHomeScreen(
         .widthIn(max = deviceProfile.maxCardWidthDp),
       verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-      if (uiState.themeMode == WeykyThemeMode.MODERN) {
-        ModernCombinedDateWeatherCard(
-          uiState = uiState,
-          borderColor = borderColor,
-          textPrimary = textPrimary,
-          textSecondary = textSecondary,
-          textMuted = textMuted,
-          onQuerySubmit = onQuerySubmit
-        )
-      } else {
-        HomeTopRowCards(
-          uiState = uiState,
-          borderColor = borderColor,
-          panelBg = panelBg,
-          textPrimary = textPrimary,
-          textSecondary = textSecondary,
-          textMuted = textMuted,
-          density = deviceProfile.cardDensity,
-          onQuerySubmit = onQuerySubmit
-        )
-      }
+      HomeTopRowCards(
+        uiState = uiState,
+        borderColor = borderColor,
+        panelBg = panelBg,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        textMuted = textMuted,
+        density = deviceProfile.cardDensity,
+        onQuerySubmit = onQuerySubmit
+      )
 
       val isMusicActivelyPlaying = uiState.isMusicPlaying || (uiState.activeMediaMetadata?.isPlaying == true)
       AnimatedVisibility(
@@ -516,17 +505,21 @@ private fun LandscapeThreeColumnHomeScreen(
         modifier = Modifier.fillMaxWidth()
       )
 
-      // Middle: Active auxiliary cards (Mini Player / Context Alerts)
+      // Middle: Active auxiliary cards (Mini Player only when playing, Context Alerts in its place or below it)
       Column(
         modifier = Modifier
           .weight(1f)
           .fillMaxWidth()
           .padding(vertical = 4.dp)
           .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
       ) {
-        if (hasActiveMedia) {
+        AnimatedVisibility(
+          visible = hasActiveMedia,
+          enter = fadeIn() + expandVertically(),
+          exit = fadeOut() + shrinkVertically()
+        ) {
           HomeMusicCard(
             uiState = uiState,
             borderColor = borderColor,
@@ -541,12 +534,13 @@ private fun LandscapeThreeColumnHomeScreen(
         }
         if (hasAlert) {
           if (hasActiveMedia) {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
           }
           HomeContextAlertCard(
             uiState = uiState,
             borderColor = borderColor,
-            onQuerySubmit = onQuerySubmit
+            onQuerySubmit = onQuerySubmit,
+            compactLandscapeMode = true
           )
         }
       }
@@ -646,24 +640,8 @@ private fun LandscapeThreeColumnHomeScreen(
         modifier = Modifier.fillMaxWidth()
       )
 
-      // Middle: Active auxiliary cards (Context alerts if music occupies Column 1)
-      Column(
-        modifier = Modifier
-          .weight(1f)
-          .fillMaxWidth()
-          .padding(vertical = 4.dp)
-          .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-      ) {
-        if (hasAlert && isMusicActivelyPlaying) {
-          HomeContextAlertCard(
-            uiState = uiState,
-            borderColor = borderColor,
-            onQuerySubmit = onQuerySubmit
-          )
-        }
-      }
+      // Middle spacer keeping Date card at top and Apps button at bottom
+      Spacer(modifier = Modifier.weight(1f))
 
       // Bottom: Installed Apps Button
       HomeLandscapeAppDrawerButton(

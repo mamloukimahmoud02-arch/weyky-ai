@@ -60,11 +60,11 @@ fun Modifier.weykyScreenBackground(
         uiState.batterySnapshot?.chargingState == ChargingState.FULL
 
       val targetStateColor = when {
-        isCharging -> Color(0xFF22C55E) // Charging (Cyber Green)
-        uiState.isVoiceListening -> Color(0xFFD946EF) // Listening (Deep Neon Magenta)
-        uiState.isSpeakingAloud || uiState.visualState == CoreVisualState.RESPONDING -> Color(0xFFF59E0B) // Speaking (Golden Amber)
-        uiState.isMusicPlaying || uiState.visualState == CoreVisualState.MUSIC -> Color(0xFF10B981) // Music (Emerald Teal)
-        else -> Color(0xFF00D2FF) // Idle (Electric Blue)
+        isCharging -> Color(0xFF00F59B) // Charging (Hyper Cyber Green)
+        uiState.isVoiceListening -> Color(0xFFF43F5E) // Listening (Vivid Neon Rose/Magenta)
+        uiState.isSpeakingAloud || uiState.visualState == CoreVisualState.RESPONDING -> Color(0xFFFFB800) // Speaking (Saturated Solar Gold)
+        uiState.isMusicPlaying || uiState.visualState == CoreVisualState.MUSIC -> Color(0xFF00F0FF) // Music (Electric Aqua Cyan)
+        else -> Color(0xFF00D8FF) // Idle (Saturated Electric Cyan-Blue)
       }
 
       val animatedGlowColor by animateColorAsState(
@@ -73,70 +73,102 @@ fun Modifier.weykyScreenBackground(
         label = "modern_glow_color"
       )
 
-      val modernBgColor = if (isLight) Color(0xFFF1F5F9) else Color(0xFF030712)
-      val ambientSecondaryColor = if (isLight) Color(0xFFE2E8F0) else Color(0xFF040914)
+      val modernBgColor = if (isLight) Color(0xFFE0ECFF) else Color(0xFF04081C)
 
       val glowAlpha = when {
-        isPowerSaving -> 0.16f
-        isLight -> 0.22f
-        else -> 0.38f
+        isPowerSaving -> 0.34f
+        isLight -> 0.46f
+        else -> 0.76f
       }
 
       return this
         .background(modernBgColor)
         .drawBehind {
-          // 1. Deep cosmic gradient base
+          val w = size.width
+          val h = size.height
+          val maxDim = maxOf(w, h)
+          val minDim = minOf(w, h)
+
+          // 1. Rich saturated cosmic gradient base (works in both Portrait & Landscape)
           drawRect(
-            brush = Brush.verticalGradient(
-              colors = listOf(
-                Color(0xFF040814),
-                Color(0xFF050E1D),
-                Color(0xFF080B18),
-                Color(0xFF030610)
-              )
+            brush = Brush.linearGradient(
+              colors = if (isLight) {
+                listOf(
+                  Color(0xFFDbeafe),
+                  Color(0xFFE0E7FF),
+                  Color(0xFFF3E8FF),
+                  Color(0xFFDBEAFE)
+                )
+              } else {
+                listOf(
+                  Color(0xFF040B29),
+                  Color(0xFF0A1944),
+                  Color(0xFF1B0C42),
+                  Color(0xFF060B24)
+                )
+              },
+              start = Offset(0f, 0f),
+              end = Offset(w, h)
             )
           )
 
-          // 2. Cyan luminous nebula on the left
+          // 2. Saturated Electric Cyan & Azure nebula on the left / top-left
           drawCircle(
             brush = Brush.radialGradient(
               colors = listOf(
-                Color(0xFF00B4D8).copy(alpha = glowAlpha * 0.9f),
-                Color(0xFF0077B6).copy(alpha = glowAlpha * 0.45f),
+                Color(0xFF00E5FF).copy(alpha = glowAlpha * 0.95f),
+                Color(0xFF0066FF).copy(alpha = glowAlpha * 0.62f),
+                Color(0xFF1D4ED8).copy(alpha = glowAlpha * 0.25f),
                 Color.Transparent
               ),
-              center = Offset(size.width * 0.12f, size.height * 0.42f),
-              radius = size.width * 0.75f
+              center = Offset(w * 0.14f, h * 0.36f),
+              radius = maxDim * 0.72f
             ),
-            center = Offset(size.width * 0.12f, size.height * 0.42f),
-            radius = size.width * 0.75f
+            center = Offset(w * 0.14f, h * 0.36f),
+            radius = maxDim * 0.72f
           )
 
-          // 3. Purple & Magenta nebula clouds on the center-right
+          // 3. Saturated Royal Violet & Neon Magenta nebula on the right / bottom-right
           drawCircle(
             brush = Brush.radialGradient(
               colors = listOf(
-                Color(0xFF8B5CF6).copy(alpha = glowAlpha * 0.85f),
-                Color(0xFFC026D3).copy(alpha = glowAlpha * 0.40f),
+                Color(0xFFD946EF).copy(alpha = glowAlpha * 0.90f),
+                Color(0xFF8B5CF6).copy(alpha = glowAlpha * 0.65f),
+                Color(0xFF4F46E5).copy(alpha = glowAlpha * 0.28f),
                 Color.Transparent
               ),
-              center = Offset(size.width * 0.88f, size.height * 0.48f),
-              radius = size.width * 0.85f
+              center = Offset(w * 0.86f, h * 0.56f),
+              radius = maxDim * 0.76f
             ),
-            center = Offset(size.width * 0.88f, size.height * 0.48f),
-            radius = size.width * 0.85f
+            center = Offset(w * 0.86f, h * 0.56f),
+            radius = maxDim * 0.76f
           )
 
-          // 4. Centered radiant aura directly behind the WEYKY core
-          val centerX = size.width * 0.5f
-          val centerY = size.height * 0.44f
-          val coreRadius = size.width * 0.55f
+          // 4. Deep Indigo-Magenta atmospheric bloom across top-right / bottom-left diagonal
+          drawCircle(
+            brush = Brush.radialGradient(
+              colors = listOf(
+                Color(0xFF6366F1).copy(alpha = glowAlpha * 0.55f),
+                Color(0xFFEC4899).copy(alpha = glowAlpha * 0.24f),
+                Color.Transparent
+              ),
+              center = Offset(w * 0.52f, h * 0.18f),
+              radius = maxDim * 0.60f
+            ),
+            center = Offset(w * 0.52f, h * 0.18f),
+            radius = maxDim * 0.60f
+          )
+
+          // 5. Centered radiant aura directly behind the WEYKY core
+          val centerX = w * 0.5f
+          val centerY = h * 0.46f
+          val coreRadius = minDim * 0.68f
 
           drawCircle(
             brush = Brush.radialGradient(
               colors = listOf(
-                animatedGlowColor.copy(alpha = glowAlpha * 0.75f),
-                animatedGlowColor.copy(alpha = glowAlpha * 0.25f),
+                animatedGlowColor.copy(alpha = glowAlpha * 0.82f),
+                animatedGlowColor.copy(alpha = glowAlpha * 0.36f),
                 Color.Transparent
               ),
               center = Offset(centerX, centerY),

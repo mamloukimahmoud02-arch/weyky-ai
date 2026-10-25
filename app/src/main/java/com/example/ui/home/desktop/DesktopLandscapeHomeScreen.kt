@@ -136,6 +136,8 @@ fun DesktopLandscapeHomeScreen(
   val hasFallbackEvent = uiState.importantEvents.isNotEmpty()
   val hasAlert = isLowBattery || isBatteryFull || hasMissedCall || hasUrgentNotif || hasFallbackEvent
 
+  val isMusicActivelyPlaying = uiState.isMusicPlaying || (uiState.activeMediaMetadata?.isPlaying == true)
+
   // Arabic RTL Desktop Workspace Layout
   CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     Box(
@@ -143,71 +145,19 @@ fun DesktopLandscapeHomeScreen(
         .fillMaxSize()
         .testTag("desktop_landscape_root")
     ) {
-      // 1. DESKTOP WORKSPACE (Upper widgets + Spacious Central Core + Response Bubble)
+      // 1A. CENTER WORKSPACE (Spacious Central Core + Response Bubble above Taskbar)
       Column(
         modifier = Modifier
           .fillMaxSize()
           .padding(
             start = 14.dp,
             end = 14.dp,
-            top = 6.dp,
+            top = 46.dp,
             bottom = 54.dp // Reserves clean height for the 48dp floating taskbar
           ),
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally
       ) {
-        // TOP ROW: In RTL: Info Widgets on Right (Start), Music Player on Left (End)
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 2.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.Top
-        ) {
-          // Upper-Right (Start in RTL): Compact Information Pills (Location, Weather, Date)
-          DesktopCompactInfoPills(
-            uiState = uiState,
-            themeMode = uiState.themeMode,
-            borderColor = borderColor,
-            panelBg = panelBgElevated,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            onLocationClick = onLocationClick,
-            onWeatherClick = onWeatherClick,
-            onDateClick = onDateClick
-          )
-
-          // Upper-Left (End in RTL): Compact Music Player Widget
-          DesktopCompactMusicWidget(
-            uiState = uiState,
-            themeMode = uiState.themeMode,
-            borderColor = borderColor,
-            panelBg = panelBgElevated,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            onToggleMediaPlayback = onToggleMediaPlayback,
-            onPreviousMediaTrack = onPreviousMediaTrack,
-            onNextMediaTrack = onNextMediaTrack,
-            onLaunchMusicApp = onLaunchMusicApp
-          )
-        }
-
-        // Contextual Alert (if present, rendered as a compact floating card)
-        if (hasAlert) {
-          Box(
-            modifier = Modifier
-              .widthIn(max = 520.dp)
-              .padding(vertical = 2.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            HomeContextAlertCard(
-              uiState = uiState,
-              borderColor = borderColor,
-              onQuerySubmit = onQuerySubmit
-            )
-          }
-        }
-
         // Center Stage: The protected, untouched WEYKY Living Core
         BoxWithConstraints(
           modifier = Modifier
@@ -245,6 +195,66 @@ fun DesktopLandscapeHomeScreen(
               onQuerySubmit = onQuerySubmit,
               onConfirmOption = onConfirmOption,
               onRequestPermission = onRequestPermission
+            )
+          }
+        }
+      }
+
+      // 1B. TOP HUD ROW: In RTL: Info Widgets on Right (Start), Music Player & Compact Alerts on Left (End)
+      Row(
+        modifier = Modifier
+          .align(Alignment.TopCenter)
+          .fillMaxWidth()
+          .padding(start = 14.dp, end = 14.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+      ) {
+        // Upper-Right (Start in RTL): Compact Information Pills (Location, Weather, Date)
+        DesktopCompactInfoPills(
+          uiState = uiState,
+          themeMode = uiState.themeMode,
+          borderColor = borderColor,
+          panelBg = panelBgElevated,
+          textPrimary = textPrimary,
+          textSecondary = textSecondary,
+          onLocationClick = onLocationClick,
+          onWeatherClick = onWeatherClick,
+          onDateClick = onDateClick
+        )
+
+        // Upper-Left (End in RTL):
+        // - Music player appears ONLY when music is playing.
+        // - Notifications card is compact (same size as music player):
+        //   appears in the music player's spot when music is not playing, or directly below it when music is playing.
+        Column(
+          horizontalAlignment = Alignment.End,
+          verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          AnimatedVisibility(
+            visible = isMusicActivelyPlaying,
+            enter = fadeIn(),
+            exit = fadeOut()
+          ) {
+            DesktopCompactMusicWidget(
+              uiState = uiState,
+              themeMode = uiState.themeMode,
+              borderColor = borderColor,
+              panelBg = panelBgElevated,
+              textPrimary = textPrimary,
+              textSecondary = textSecondary,
+              onToggleMediaPlayback = onToggleMediaPlayback,
+              onPreviousMediaTrack = onPreviousMediaTrack,
+              onNextMediaTrack = onNextMediaTrack,
+              onLaunchMusicApp = onLaunchMusicApp
+            )
+          }
+
+          if (hasAlert) {
+            HomeContextAlertCard(
+              uiState = uiState,
+              borderColor = borderColor,
+              onQuerySubmit = onQuerySubmit,
+              compactLandscapeMode = true
             )
           }
         }
@@ -582,7 +592,9 @@ private fun DesktopCompactInfoPills(
     "14°"
   }
   val conditionText = weather?.condition ?: "غائم"
-  val locationText = weather?.locationName?.takeIf { it.isNotBlank() } ?: "موقعي الحالي"
+  val locationText = weather?.locationName
+    ?.takeIf { it.isNotBlank() && it != "موقعي الحالي" }
+    ?: "جاري تحديد المنطقة..."
   val dateText = uiState.currentDateString.ifBlank { "الجمعة، 23 أكتوبر" }
   val engDateText = uiState.currentEnglishDateString.ifBlank { "FRIDAY, 23 OCTOBER 2026" }
 
@@ -590,10 +602,11 @@ private fun DesktopCompactInfoPills(
     horizontalArrangement = Arrangement.spacedBy(8.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    // 1. Location Pill: [ 📍 موقعي الحالي ] -> Clickable: speaks location
+    // 1. Location Pill: [ 📍 اسم المنطقة الجغرافية ] -> Clickable: speaks location
     Row(
       modifier = Modifier
         .height(36.dp)
+        .widthIn(max = 190.dp)
         .clip(pillShape)
         .background(pillBg)
         .border(
@@ -618,6 +631,8 @@ private fun DesktopCompactInfoPills(
         color = textPrimary,
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
       )
     }

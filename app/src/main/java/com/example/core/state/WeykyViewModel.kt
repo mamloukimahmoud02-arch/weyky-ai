@@ -531,10 +531,12 @@ class WeykyViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun announceLocation() {
-    val loc = _uiState.value.weatherSnapshot?.locationName?.takeIf { it.isNotBlank() }
+    val loc = _uiState.value.weatherSnapshot?.locationName
+      ?.takeIf { it.isNotBlank() && it != "موقعي الحالي" }
     val text = if (loc != null) {
       "موقعك الجغرافي الحالي هو: $loc."
     } else {
+      fetchInitialWeather()
       "جاري تحديد وتحديث موقعك الجغرافي."
     }
     announceInfo(text)

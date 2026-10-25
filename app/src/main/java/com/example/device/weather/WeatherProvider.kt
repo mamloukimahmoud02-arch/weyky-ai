@@ -122,27 +122,28 @@ class RealWeatherProvider(
   override suspend fun fetchWeather(): WeatherSnapshot = withContext(Dispatchers.IO) {
     val locResult = locationProvider.getCurrentLocation()
     val coords = when (locResult) {
-      is LocationResult.PermissionRequired -> {
-        return@withContext cachedWeather?.copy(isCached = true)
-          ?: WeatherSnapshot(
-            temperatureCelsius = null,
-            condition = null,
-            locationName = null,
-            isAvailable = false,
-            statusMessage = "الطقس: يحتاج صلاحية الموقع"
-          )
-      }
-      is LocationResult.LocationDisabledOrUnavailable -> {
-        return@withContext cachedWeather?.copy(isCached = true)
-          ?: WeatherSnapshot(
-            temperatureCelsius = null,
-            condition = null,
-            locationName = null,
-            isAvailable = false,
-            statusMessage = "الطقس: الموقع غير متاح"
-          )
-      }
       is LocationResult.Success -> locResult.location
+      is LocationResult.PermissionRequired,
+      is LocationResult.LocationDisabledOrUnavailable -> {
+        val ipFallback = fetchIpBasedLocation()
+        if (ipFallback != null) {
+          ipFallback
+        } else {
+          val msg = if (locResult is LocationResult.PermissionRequired) {
+            "الطقس: يحتاج صلاحية الموقع"
+          } else {
+            "الطقس: الموقع غير متاح"
+          }
+          return@withContext cachedWeather?.copy(isCached = true)
+            ?: WeatherSnapshot(
+              temperatureCelsius = null,
+              condition = null,
+              locationName = cachedAreaName,
+              isAvailable = false,
+              statusMessage = msg
+            )
+        }
+      }
     }
 
     var connection: HttpURLConnection? = null
@@ -501,6 +502,52 @@ class RealWeatherProvider(
           root.optString("city")
         )
         formatPlaceAndState(finePlace, statePlace)
+      } else null
+    } catch (_: Exception) {
+      null
+    } finally {
+      conn?.disconnect()
+    }
+  }
+
+  /**
+   * Resolves approximate coordinates and exact Arabic geographical region name via client IP
+   * when hardware GPS is disabled or location permission has not been granted yet.
+   */
+  private fun fetchIpBasedLocation(): DeviceLocation? {
+    var conn: HttpURLConnection? = null
+    return try {
+      val url = URL("https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=ar")
+      conn = (url.openConnection() as HttpURLConnection).apply {
+        connectTimeout = 2800
+        readTimeout = 2800
+        requestMethod = "GET"
+      }
+      if (conn.responseCode == 200) {
+        val text = BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
+        val root = JSONObject(text)
+        val lat = root.optDouble("latitude", Double.NaN)
+        val lon = root.optDouble("longitude", Double.NaN)
+        if (!lat.isNaN() && !lon.isNaN()) {
+          val finePlace = firstNonBlank(
+            root.optString("locality"),
+            root.optString("city")
+          )
+          val statePlace = firstNonBlank(
+            root.optString("principalSubdivision"),
+            root.optString("city"),
+            root.optString("countryName")
+          )
+          val areaName = formatPlaceAndState(finePlace, statePlace)
+          if (!areaName.isNullOrBlank()) {
+            cachedAreaName = areaName
+          }
+          DeviceLocation(
+            latitude = lat,
+            longitude = lon,
+            resolvedLocationName = areaName
+          )
+        } else null
       } else null
     } catch (_: Exception) {
       null

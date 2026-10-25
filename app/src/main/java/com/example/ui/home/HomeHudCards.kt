@@ -25,14 +25,17 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CutCornerShape
@@ -229,6 +232,7 @@ fun HomeWeatherCard(
 ) {
   val isCompact = density == CardDensity.COMPACT
   val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
+  val isModern = uiState.themeMode == WeykyThemeMode.MODERN
   val weather = uiState.weatherSnapshot
   val tempVal = weather?.temperatureCelsius
   val tempText = if (weather != null && weather.isAvailable && tempVal != null) {
@@ -237,6 +241,17 @@ fun HomeWeatherCard(
     "18°"
   }
   val condition = weather?.condition?.ifBlank { null } ?: "غائم جزئياً"
+  val locationName = weather?.locationName
+    ?.takeIf { it.isNotBlank() && it != "موقعي الحالي" }
+    ?: "جاري تحديد المنطقة..."
+
+  val cardHeight = if (isCompact) 66.dp else 72.dp
+  val iconBoxSize = if (isCompact) 42.dp else 46.dp
+  val viewportShape = when (uiState.themeMode) {
+    WeykyThemeMode.TACTICAL -> CutCornerShape(8.dp)
+    WeykyThemeMode.MODERN -> RoundedCornerShape(14.dp)
+    WeykyThemeMode.MINIMAL -> RoundedCornerShape(12.dp)
+  }
 
   WeykyAdaptiveCard(
     uiState = uiState,
@@ -246,38 +261,45 @@ fun HomeWeatherCard(
     tabTitle = null,
     tabPosition = HudTabPosition.NONE,
     onClick = { onQuerySubmit("ما حالة الطقس؟") },
-    modifier = modifier.testTag("home_weather_card")
+    modifier = modifier
+      .height(cardHeight)
+      .testTag("home_weather_card")
   ) {
     Row(
       modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 10.dp),
+        .fillMaxSize()
+        .padding(horizontal = 11.dp, vertical = 9.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       RealtimeSkyViewport(
         weather = weather,
-        modifier = Modifier.size(if (isCompact) 40.dp else 46.dp),
-        shape = if (isMinimal) RoundedCornerShape(12.dp) else CutCornerShape(6.dp),
-        borderColor = borderColor.copy(alpha = 0.5f)
+        modifier = Modifier.size(iconBoxSize),
+        shape = viewportShape,
+        borderColor = if (isModern) Color(0xFF00D2FF).copy(alpha = 0.65f) else borderColor.copy(alpha = 0.5f)
       )
 
-      Column(modifier = Modifier.weight(1f)) {
+      Column(
+        modifier = Modifier
+          .weight(1f)
+          .fillMaxHeight(),
+        verticalArrangement = Arrangement.SpaceBetween
+      ) {
         Text(
           text = tempText,
-          fontSize = 18.sp,
+          fontSize = if (isCompact) 15.5.sp else 16.5.sp,
           fontWeight = FontWeight.Bold,
           color = textPrimary,
-          letterSpacing = 0.5.sp
+          letterSpacing = 0.4.sp,
+          maxLines = 1
         )
         Text(
           text = condition,
-          fontSize = 11.sp,
-          color = textSecondary,
+          fontSize = if (isCompact) 10.sp else 11.sp,
+          color = if (isModern) Color(0xFFA5C9F0) else textSecondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis
         )
-        Spacer(modifier = Modifier.height(1.dp))
         Row(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -285,13 +307,13 @@ fun HomeWeatherCard(
           Icon(
             imageVector = Icons.Default.Place,
             contentDescription = "Location",
-            tint = if (isMinimal) Color(0xFF00D2FF) else borderColor,
+            tint = if (isMinimal || isModern) Color(0xFF00D2FF) else borderColor,
             modifier = Modifier.size(11.dp)
           )
           Text(
-            text = "الجزائر",
+            text = locationName,
             fontSize = 9.5.sp,
-            color = textMuted,
+            color = if (isModern) Color(0xFF8EB2D6) else textMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
           )
@@ -313,61 +335,112 @@ fun HomeDateCard(
   onQuerySubmit: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val isCompact = density == CardDensity.COMPACT
   val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
+  val isModern = uiState.themeMode == WeykyThemeMode.MODERN
   val primaryDate = uiState.currentDateString.ifBlank { "الخميس، 22 أكتوبر" }
   val englishDate = uiState.currentEnglishDateString.ifBlank { "THURSDAY, 22 OCT" }
+  val timeSummary = uiState.currentTimeString.ifBlank { "12:00" }
+
+  val cardHeight = if (isCompact) 66.dp else 72.dp
+  val iconBoxSize = if (isCompact) 42.dp else 46.dp
+  val iconShape = when (uiState.themeMode) {
+    WeykyThemeMode.TACTICAL -> CutCornerShape(8.dp)
+    WeykyThemeMode.MODERN -> RoundedCornerShape(14.dp)
+    WeykyThemeMode.MINIMAL -> RoundedCornerShape(12.dp)
+  }
+  val iconBg = when (uiState.themeMode) {
+    WeykyThemeMode.MODERN -> Color(0x2E00D2FF)
+    WeykyThemeMode.MINIMAL -> Color(0xFF152230)
+    WeykyThemeMode.TACTICAL -> borderColor.copy(alpha = 0.14f)
+  }
+  val iconTint = when (uiState.themeMode) {
+    WeykyThemeMode.MODERN -> Color(0xFF00E5FF)
+    WeykyThemeMode.MINIMAL -> Color(0xFF7A8B9E)
+    WeykyThemeMode.TACTICAL -> borderColor
+  }
 
   WeykyAdaptiveCard(
     uiState = uiState,
     accentColor = borderColor,
     containerColor = panelBg,
-    cutCornerSize = 14.dp,
+    cutCornerSize = if (isCompact) 10.dp else 14.dp,
     tabTitle = null,
     tabPosition = HudTabPosition.NONE,
     onClick = { onQuerySubmit("ما تاريخ اليوم؟") },
-    modifier = modifier.testTag("home_date_card")
+    modifier = modifier
+      .height(cardHeight)
+      .testTag("home_date_card")
   ) {
     Row(
       modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 10.dp),
+        .fillMaxSize()
+        .padding(horizontal = 11.dp, vertical = 9.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       Box(
         modifier = Modifier
-          .size(40.dp)
-          .clip(if (isMinimal) RoundedCornerShape(12.dp) else CircleShape)
-          .background(if (isMinimal) Color(0xFF152230) else borderColor.copy(alpha = 0.12f)),
+          .size(iconBoxSize)
+          .clip(iconShape)
+          .background(iconBg)
+          .border(
+            width = 1.dp,
+            color = if (isModern) Color(0xFF00D2FF).copy(alpha = 0.45f) else borderColor.copy(alpha = 0.35f),
+            shape = iconShape
+          ),
         contentAlignment = Alignment.Center
       ) {
         Icon(
           imageVector = Icons.Default.DateRange,
           contentDescription = "Date",
-          tint = if (isMinimal) Color(0xFF7A8B9E) else borderColor,
+          tint = iconTint,
           modifier = Modifier.size(22.dp)
         )
       }
 
-      Column(modifier = Modifier.weight(1f)) {
+      Column(
+        modifier = Modifier
+          .weight(1f)
+          .fillMaxHeight(),
+        verticalArrangement = Arrangement.SpaceBetween
+      ) {
         Text(
           text = primaryDate,
-          fontSize = 13.5.sp,
+          fontSize = if (isCompact) 12.5.sp else 13.5.sp,
           fontWeight = FontWeight.Bold,
           color = textPrimary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis
         )
-        Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = englishDate.uppercase(),
-          fontSize = 9.sp,
+          fontSize = if (isCompact) 9.sp else 9.5.sp,
           fontFamily = FontFamily.Monospace,
-          letterSpacing = 0.8.sp,
-          color = textSecondary,
+          letterSpacing = 0.6.sp,
+          color = if (isModern) Color(0xFFA5C9F0) else textSecondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis
         )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(6.dp)
+              .clip(CircleShape)
+              .background(if (isMinimal || isModern) Color(0xFF00D2FF) else borderColor)
+          )
+          Text(
+            text = timeSummary,
+            fontSize = 9.5.sp,
+            fontFamily = FontFamily.Monospace,
+            color = if (isModern) Color(0xFF8EB2D6) else textMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
       }
     }
   }
@@ -389,11 +462,12 @@ fun HomeTopRowCards(
     Row(
       modifier = modifier
         .fillMaxWidth()
+        .height(IntrinsicSize.Min)
         .testTag("home_top_row_cards"),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // Left: Date Card
+      // Left: Date Card (Equal width 1f and equal height)
       HomeDateCard(
         uiState = uiState,
         borderColor = borderColor,
@@ -403,10 +477,12 @@ fun HomeTopRowCards(
         textMuted = textMuted,
         density = density,
         onQuerySubmit = onQuerySubmit,
-        modifier = Modifier.weight(1.05f)
+        modifier = Modifier
+          .weight(1f)
+          .fillMaxHeight()
       )
 
-      // Right: Weather Card
+      // Right: Weather Card (Equal width 1f and equal height)
       HomeWeatherCard(
         uiState = uiState,
         borderColor = borderColor,
@@ -416,7 +492,9 @@ fun HomeTopRowCards(
         textMuted = textMuted,
         density = density,
         onQuerySubmit = onQuerySubmit,
-        modifier = Modifier.weight(1f)
+        modifier = Modifier
+          .weight(1f)
+          .fillMaxHeight()
       )
     }
   }
@@ -2252,7 +2330,8 @@ fun HomeContextAlertCard(
   uiState: WeykyUiState,
   borderColor: Color,
   onQuerySubmit: (String) -> Unit,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactLandscapeMode: Boolean = false
 ) {
   val battery = uiState.batterySnapshot
   val isLowBattery = battery != null && battery.isAvailable && battery.percentage <= 20 &&
@@ -2408,108 +2487,244 @@ fun HomeContextAlertCard(
     val textPrimary = JarvisHudColors.textPrimary(isLight)
     val textSecondary = JarvisHudColors.textSecondary(isLight)
 
-    WeykyAdaptiveCard(
-      uiState = uiState,
-      accentColor = borderColor,
-      containerColor = panelBg,
-      cutCornerSize = 16.dp,
-      tabTitle = "ALERTS",
-      tabPosition = HudTabPosition.BOTTOM_END,
-      onClick = onCardClick,
-      modifier = modifier
-        .fillMaxWidth()
-        .testTag(testTagId)
-    ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+    if (compactLandscapeMode) {
+      val isTactical = uiState.themeMode == WeykyThemeMode.TACTICAL
+      val isModern = uiState.themeMode == WeykyThemeMode.MODERN
+      val cardShape = when {
+        isTactical -> CutCornerShape(6.dp)
+        isModern -> RoundedCornerShape(16.dp)
+        else -> RoundedCornerShape(10.dp)
+      }
+      val cardBg = when {
+        isTactical -> Color(0xFF030D1A).copy(alpha = 0.90f)
+        isModern -> Color(0xFF071426).copy(alpha = 0.82f)
+        else -> panelBg.copy(alpha = 0.85f)
+      }
+      val cardBorder = when {
+        isTactical -> borderColor.copy(alpha = 0.80f)
+        isModern -> borderColor.copy(alpha = 0.55f)
+        else -> borderColor.copy(alpha = 0.35f)
+      }
+
+      Box(
+        modifier = modifier
+          .widthIn(min = 250.dp, max = 290.dp)
+          .height(56.dp)
+          .shadow(elevation = if (isModern) 10.dp else 6.dp, shape = cardShape)
+          .clip(cardShape)
+          .background(cardBg)
+          .border(
+            width = if (isTactical) 1.2.dp else 1.dp,
+            color = cardBorder,
+            shape = cardShape
+          )
+          .clickable(onClick = onCardClick)
+          .padding(horizontal = 8.dp, vertical = 6.dp)
+          .testTag(testTagId)
       ) {
         Row(
+          modifier = Modifier.fillMaxSize(),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
-          modifier = Modifier.weight(1f)
+          horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          Box(
-            modifier = Modifier
-              .size(42.dp)
-              .shadow(elevation = 8.dp, shape = CircleShape, ambientColor = iconColor, spotColor = iconColor)
-              .clip(CircleShape)
-              .background(iconColor.copy(alpha = 0.14f))
-              .border(1.5.dp, iconColor.copy(alpha = 0.85f), CircleShape),
-            contentAlignment = Alignment.Center
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
           ) {
-            Icon(
-              imageVector = iconVector,
-              contentDescription = mainTitle,
-              tint = iconColor,
-              modifier = Modifier.size(20.dp)
-            )
+            Box(
+              modifier = Modifier
+                .size(38.dp)
+                .clip(if (isTactical) CutCornerShape(4.dp) else RoundedCornerShape(8.dp))
+                .background(iconColor.copy(alpha = 0.16f))
+                .border(
+                  width = 1.2.dp,
+                  color = iconColor.copy(alpha = 0.85f),
+                  shape = if (isTactical) CutCornerShape(4.dp) else RoundedCornerShape(8.dp)
+                ),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = iconVector,
+                contentDescription = mainTitle,
+                tint = iconColor,
+                modifier = Modifier.size(18.dp)
+              )
+            }
+
+            Column(
+              modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+              verticalArrangement = Arrangement.Center
+            ) {
+              Text(
+                text = mainTitle,
+                fontSize = 11.sp,
+                fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold,
+                color = textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = subLabel,
+                fontSize = 8.5.sp,
+                fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif,
+                color = textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
 
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = mainTitle,
-              fontSize = 15.sp,
-              fontFamily = FontFamily.Monospace,
-              fontWeight = FontWeight.Bold,
-              color = textPrimary,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-              text = subLabel,
-              fontSize = 10.sp,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 0.8.sp,
-              color = textSecondary,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+          ) {
+            Column(
+              horizontalAlignment = Alignment.End,
+              verticalArrangement = Arrangement.Center,
+              modifier = Modifier.padding(start = 2.dp)
+            ) {
+              Text(
+                text = rightTopText,
+                fontSize = 9.5.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                color = textPrimary,
+                textAlign = TextAlign.End
+              )
+              Text(
+                text = rightBottomLabel,
+                fontSize = 7.5.sp,
+                fontFamily = FontFamily.Monospace,
+                color = textSecondary,
+                textAlign = TextAlign.End
+              )
+            }
+
+            IconButton(
+              onClick = { dismissedSignature = activeEventSignature },
+              modifier = Modifier
+                .size(26.dp)
+                .testTag("dismiss_alert_button")
+            ) {
+              Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Dismiss Alert",
+                tint = textSecondary,
+                modifier = Modifier.size(14.dp)
+              )
+            }
           }
         }
-
+      }
+    } else {
+      WeykyAdaptiveCard(
+        uiState = uiState,
+        accentColor = borderColor,
+        containerColor = panelBg,
+        cutCornerSize = 16.dp,
+        tabTitle = "ALERTS",
+        tabPosition = HudTabPosition.BOTTOM_END,
+        onClick = onCardClick,
+        modifier = modifier
+          .fillMaxWidth()
+          .testTag(testTagId)
+      ) {
         Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp)
+          horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          Column(
-            horizontalAlignment = Alignment.End,
-            modifier = Modifier.padding(start = 4.dp)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f)
           ) {
-            Text(
-              text = rightTopText,
-              fontSize = 12.sp,
-              fontFamily = FontFamily.Monospace,
-              fontWeight = FontWeight.SemiBold,
-              color = textPrimary,
-              textAlign = TextAlign.End
-            )
-            Text(
-              text = rightBottomLabel,
-              fontSize = 9.sp,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 0.8.sp,
-              color = textSecondary,
-              textAlign = TextAlign.End
-            )
+            Box(
+              modifier = Modifier
+                .size(42.dp)
+                .shadow(elevation = 8.dp, shape = CircleShape, ambientColor = iconColor, spotColor = iconColor)
+                .clip(CircleShape)
+                .background(iconColor.copy(alpha = 0.14f))
+                .border(1.5.dp, iconColor.copy(alpha = 0.85f), CircleShape),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = iconVector,
+                contentDescription = mainTitle,
+                tint = iconColor,
+                modifier = Modifier.size(20.dp)
+              )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = mainTitle,
+                fontSize = 15.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = subLabel,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.8.sp,
+                color = textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
 
-          IconButton(
-            onClick = { dismissedSignature = activeEventSignature },
-            modifier = Modifier
-              .size(32.dp)
-              .testTag("dismiss_alert_button")
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
           ) {
-            Icon(
-              imageVector = Icons.Default.Close,
-              contentDescription = "Dismiss Alert",
-              tint = textSecondary,
-              modifier = Modifier.size(16.dp)
-            )
+            Column(
+              horizontalAlignment = Alignment.End,
+              modifier = Modifier.padding(start = 4.dp)
+            ) {
+              Text(
+                text = rightTopText,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                color = textPrimary,
+                textAlign = TextAlign.End
+              )
+              Text(
+                text = rightBottomLabel,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.8.sp,
+                color = textSecondary,
+                textAlign = TextAlign.End
+              )
+            }
+
+            IconButton(
+              onClick = { dismissedSignature = activeEventSignature },
+              modifier = Modifier
+                .size(32.dp)
+                .testTag("dismiss_alert_button")
+            ) {
+              Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Dismiss Alert",
+                tint = textSecondary,
+                modifier = Modifier.size(16.dp)
+              )
+            }
           }
         }
       }
