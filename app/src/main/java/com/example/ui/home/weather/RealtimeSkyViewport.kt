@@ -202,40 +202,73 @@ fun RealtimeSkyViewport(
           // A. Twinkling Stars
           drawStars(w, h, starTwinkle)
 
-          // B. Luminous White Moon (when in its astronomical appearance window)
+          // B. Luminous Blue-White Moon with Electric Cyan Corona (matching reference artwork)
           val lunar = calculateLunarAstronomy(weather)
           if (lunar.isMoonInAppearanceWindow) {
             val moonCenterX = w * 0.70f
             val moonCenterY = h * 0.35f
-            val moonRadius = w * (0.14f + 0.06f * lunar.illuminationFraction)
+            val moonRadius = w * (0.16f + 0.05f * lunar.illuminationFraction)
+            val moonCenter = Offset(moonCenterX, moonCenterY)
 
-            // Outer silver-white lunar halo
+            // Outer electric cyan-blue lunar corona
             drawCircle(
               brush = Brush.radialGradient(
                 colors = listOf(
-                  Color(0x88FFFFFF).copy(alpha = celestialGlow * 0.55f),
-                  Color(0x33CBD5E1).copy(alpha = celestialGlow * 0.35f),
+                  Color(0x9900F0FF).copy(alpha = celestialGlow * 0.70f),
+                  Color(0x5500B4D8).copy(alpha = celestialGlow * 0.45f),
+                  Color(0x220284C7).copy(alpha = celestialGlow * 0.25f),
                   Color.Transparent
                 ),
-                center = Offset(moonCenterX, moonCenterY),
-                radius = moonRadius * 2.5f
+                center = moonCenter,
+                radius = moonRadius * 2.6f
               ),
-              center = Offset(moonCenterX, moonCenterY),
-              radius = moonRadius * 2.5f
+              center = moonCenter,
+              radius = moonRadius * 2.6f
             )
 
-            // Pure pearl-white moon orb
+            // Base ice-white & sapphire-blue moon sphere
             drawCircle(
               brush = Brush.radialGradient(
-                0.0f to Color(0xFFFFFFFF),
-                0.45f to Color(0xFFF8FAFC),
-                0.78f to Color(0xFFE2E8F0),
-                1.0f to Color(0xFF94A3B8),
-                center = Offset(moonCenterX, moonCenterY),
+                0.0f to Color(0xFFE0F2FE),
+                0.55f to Color(0xFFBAE6FD),
+                0.85f to Color(0xFF60A5FA),
+                1.0f to Color(0xFFFFFFFF),
+                center = moonCenter,
                 radius = moonRadius
               ),
-              center = Offset(moonCenterX, moonCenterY),
+              center = moonCenter,
               radius = moonRadius
+            )
+
+            // Subtle sapphire lunar maria patches & bright Tycho highland
+            drawCircle(
+              color = Color(0x771E3A8A),
+              center = moonCenter + Offset(-moonRadius * 0.26f, -moonRadius * 0.14f),
+              radius = moonRadius * 0.38f
+            )
+            drawCircle(
+              color = Color(0x661E40AF),
+              center = moonCenter + Offset(moonRadius * 0.08f, -moonRadius * 0.08f),
+              radius = moonRadius * 0.30f
+            )
+            drawCircle(
+              color = Color(0xCCFFFFFF),
+              center = moonCenter + Offset(moonRadius * 0.32f, moonRadius * 0.34f),
+              radius = moonRadius * 0.22f
+            )
+
+            // Blazing white-cyan outer rim ring
+            drawCircle(
+              color = Color(0xAA00E5FF),
+              center = moonCenter,
+              radius = moonRadius * 1.04f,
+              style = Stroke(width = 2.2f)
+            )
+            drawCircle(
+              color = Color.White,
+              center = moonCenter,
+              radius = moonRadius,
+              style = Stroke(width = 1.2f)
             )
           }
         }

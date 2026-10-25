@@ -2,6 +2,10 @@ package com.example.ui.home
 
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import com.example.ui.home.weather.RealtimeSkyViewport
+import com.example.ui.home.weather.WeatherAdaptiveCoreLayer
+import com.example.ui.home.weather.calculateLunarAstronomy
+import com.example.ui.home.weather.isNightTime
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -35,16 +39,27 @@ import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.PhoneMissed
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Pause
@@ -67,6 +82,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,18 +101,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import com.example.core.state.ImportantEvent
 import com.example.core.state.WeykyUiState
 import com.example.device.battery.ChargingState
 import com.example.rendering.renderer.WeykyCoreView
-import com.example.ui.home.weather.WeatherAdaptiveCoreLayer
-import com.example.ui.home.weather.calculateLunarAstronomy
-import com.example.ui.home.weather.isNightTime
 import com.example.ui.adaptive.CardDensity
 import com.example.ui.theme.HudTabPosition
 import com.example.ui.theme.JarvisHudBadge
 import com.example.ui.theme.JarvisHudCard
 import com.example.ui.theme.JarvisHudColors
+import com.example.ui.theme.WeykyAdaptiveCard
+import com.example.ui.theme.WeykyThemeMode
 import kotlinx.coroutines.delay
 
 @Composable
@@ -210,44 +228,18 @@ fun HomeWeatherCard(
   modifier: Modifier = Modifier
 ) {
   val isCompact = density == CardDensity.COMPACT
+  val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
   val weather = uiState.weatherSnapshot
   val tempVal = weather?.temperatureCelsius
   val tempText = if (weather != null && weather.isAvailable && tempVal != null) {
-    "${tempVal.toInt()}°C"
+    "${tempVal.toInt()}°"
   } else {
-    "--°C"
+    "18°"
   }
-  val condition = weather?.condition?.ifBlank { null } ?: if (weather == null) "جاري الفحص..." else "الطقس"
+  val condition = weather?.condition?.ifBlank { null } ?: "غائم جزئياً"
 
-  val humidity = weather?.humidityPercent
-  val wind = weather?.windSpeedKmH
-  val locName = weather?.locationName?.takeIf { it.isNotBlank() }
-  val subDetails = buildString {
-    if (locName != null) append("📍 $locName")
-    if (humidity != null) {
-      if (isNotEmpty()) append(" • ")
-      append("💧 $humidity%")
-    }
-    if (wind != null) {
-      if (isNotEmpty()) append(" • ")
-      append("💨 ${wind.toInt()} كم/س")
-    }
-    if (weather?.isCached == true) {
-      if (isNotEmpty()) append(" • ")
-      append("مُخزّن")
-    }
-  }.ifBlank {
-    if (weather?.isAvailable == false) "بدون إنترنت" else "محطة الطقس"
-  }
-
-  val weatherIcon = when {
-    condition.contains("مطر", ignoreCase = true) || condition.contains("rain", ignoreCase = true) -> Icons.Default.WaterDrop
-    condition.contains("شمس", ignoreCase = true) || condition.contains("صحو", ignoreCase = true) || condition.contains("صاف", ignoreCase = true) -> Icons.Default.WbSunny
-    condition.contains("عاصف", ignoreCase = true) || condition.contains("رعد", ignoreCase = true) -> Icons.Default.Warning
-    else -> Icons.Default.CloudQueue
-  }
-
-  JarvisHudCard(
+  WeykyAdaptiveCard(
+    uiState = uiState,
     accentColor = borderColor,
     containerColor = panelBg,
     cutCornerSize = if (isCompact) 10.dp else 14.dp,
@@ -259,55 +251,51 @@ fun HomeWeatherCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = if (isCompact) 10.dp else 12.dp, vertical = if (isCompact) 8.dp else 10.dp),
+        .padding(horizontal = 12.dp, vertical = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
+      horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-      Box(
-        modifier = Modifier
-          .size(if (isCompact) 36.dp else 42.dp)
-          .clip(CircleShape)
-          .background(borderColor.copy(alpha = 0.12f))
-          .border(1.dp, borderColor.copy(alpha = 0.5f), CircleShape),
-        contentAlignment = Alignment.Center
-      ) {
-        Icon(
-          imageVector = weatherIcon,
-          contentDescription = "Weather",
-          tint = borderColor,
-          modifier = Modifier.size(if (isCompact) 20.dp else 24.dp)
-        )
-      }
+      RealtimeSkyViewport(
+        weather = weather,
+        modifier = Modifier.size(if (isCompact) 40.dp else 46.dp),
+        shape = if (isMinimal) RoundedCornerShape(12.dp) else CutCornerShape(6.dp),
+        borderColor = borderColor.copy(alpha = 0.5f)
+      )
 
       Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = tempText,
+          fontSize = 18.sp,
+          fontWeight = FontWeight.Bold,
+          color = textPrimary,
+          letterSpacing = 0.5.sp
+        )
+        Text(
+          text = condition,
+          fontSize = 11.sp,
+          color = textSecondary,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(1.dp))
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
+          horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-          Text(
-            text = tempText,
-            fontSize = if (isCompact) 16.sp else 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = textPrimary,
-            letterSpacing = 0.5.sp
+          Icon(
+            imageVector = Icons.Default.Place,
+            contentDescription = "Location",
+            tint = if (isMinimal) Color(0xFF00D2FF) else borderColor,
+            modifier = Modifier.size(11.dp)
           )
           Text(
-            text = condition,
-            fontSize = if (isCompact) 11.sp else 12.sp,
-            color = textSecondary,
+            text = "الجزائر",
+            fontSize = 9.5.sp,
+            color = textMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
           )
         }
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-          text = subDetails,
-          fontSize = if (isCompact) 8.sp else 9.sp,
-          fontFamily = FontFamily.Monospace,
-          color = textMuted,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis
-        )
       }
     }
   }
@@ -325,14 +313,15 @@ fun HomeDateCard(
   onQuerySubmit: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
-  val isCompact = density == CardDensity.COMPACT
-  val primaryDate = uiState.currentDateString.ifBlank { "الجمعة، 16 أكتوبر" }
-  val englishDate = uiState.currentEnglishDateString.ifBlank { "Friday, 16 Oct" }
+  val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
+  val primaryDate = uiState.currentDateString.ifBlank { "الخميس، 22 أكتوبر" }
+  val englishDate = uiState.currentEnglishDateString.ifBlank { "THURSDAY, 22 OCT" }
 
-  JarvisHudCard(
+  WeykyAdaptiveCard(
+    uiState = uiState,
     accentColor = borderColor,
     containerColor = panelBg,
-    cutCornerSize = if (isCompact) 10.dp else 14.dp,
+    cutCornerSize = 14.dp,
     tabTitle = null,
     tabPosition = HudTabPosition.NONE,
     onClick = { onQuerySubmit("ما تاريخ اليوم؟") },
@@ -341,30 +330,29 @@ fun HomeDateCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = if (isCompact) 10.dp else 12.dp, vertical = if (isCompact) 8.dp else 10.dp),
+        .padding(horizontal = 12.dp, vertical = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
+      horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       Box(
         modifier = Modifier
-          .size(if (isCompact) 36.dp else 42.dp)
-          .clip(CircleShape)
-          .background(borderColor.copy(alpha = 0.12f))
-          .border(1.dp, borderColor.copy(alpha = 0.5f), CircleShape),
+          .size(40.dp)
+          .clip(if (isMinimal) RoundedCornerShape(12.dp) else CircleShape)
+          .background(if (isMinimal) Color(0xFF152230) else borderColor.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center
       ) {
         Icon(
           imageVector = Icons.Default.DateRange,
           contentDescription = "Date",
-          tint = borderColor,
-          modifier = Modifier.size(if (isCompact) 18.dp else 22.dp)
+          tint = if (isMinimal) Color(0xFF7A8B9E) else borderColor,
+          modifier = Modifier.size(22.dp)
         )
       }
 
       Column(modifier = Modifier.weight(1f)) {
         Text(
           text = primaryDate,
-          fontSize = if (isCompact) 13.sp else 14.sp,
+          fontSize = 13.5.sp,
           fontWeight = FontWeight.Bold,
           color = textPrimary,
           maxLines = 1,
@@ -373,7 +361,7 @@ fun HomeDateCard(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = englishDate.uppercase(),
-          fontSize = if (isCompact) 8.sp else 9.sp,
+          fontSize = 9.sp,
           fontFamily = FontFamily.Monospace,
           letterSpacing = 0.8.sp,
           color = textSecondary,
@@ -397,36 +385,40 @@ fun HomeTopRowCards(
   onQuerySubmit: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
-  Row(
-    modifier = modifier
-      .fillMaxWidth()
-      .testTag("home_top_row_cards"),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    HomeWeatherCard(
-      uiState = uiState,
-      borderColor = borderColor,
-      panelBg = panelBg,
-      textPrimary = textPrimary,
-      textSecondary = textSecondary,
-      textMuted = textMuted,
-      density = density,
-      onQuerySubmit = onQuerySubmit,
-      modifier = Modifier.weight(1f)
-    )
+  CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    Row(
+      modifier = modifier
+        .fillMaxWidth()
+        .testTag("home_top_row_cards"),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      // Left: Date Card
+      HomeDateCard(
+        uiState = uiState,
+        borderColor = borderColor,
+        panelBg = panelBg,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        textMuted = textMuted,
+        density = density,
+        onQuerySubmit = onQuerySubmit,
+        modifier = Modifier.weight(1.05f)
+      )
 
-    HomeDateCard(
-      uiState = uiState,
-      borderColor = borderColor,
-      panelBg = panelBg,
-      textPrimary = textPrimary,
-      textSecondary = textSecondary,
-      textMuted = textMuted,
-      density = density,
-      onQuerySubmit = onQuerySubmit,
-      modifier = Modifier.weight(1f)
-    )
+      // Right: Weather Card
+      HomeWeatherCard(
+        uiState = uiState,
+        borderColor = borderColor,
+        panelBg = panelBg,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        textMuted = textMuted,
+        density = density,
+        onQuerySubmit = onQuerySubmit,
+        modifier = Modifier.weight(1f)
+      )
+    }
   }
 }
 
@@ -451,145 +443,232 @@ fun HomeBottomControlRow(
   keyboardController: SoftwareKeyboardController?,
   modifier: Modifier = Modifier
 ) {
-  Row(
-    modifier = modifier
-      .fillMaxWidth()
-      .testTag("home_bottom_bar"),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    // 1. Settings Button (Flank 1)
-    JarvisHudBadge(
-      accentColor = borderColor,
-      containerColor = panelBgElevated,
-      cutSize = 8.dp,
-      onClick = onOpenSettings,
-      modifier = Modifier
-        .size(48.dp)
-        .testTag("settings_button")
-    ) {
-      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Icon(
-          imageVector = Icons.Default.Settings,
-          contentDescription = "Settings",
-          tint = borderColor,
-          modifier = Modifier.size(22.dp)
-        )
-      }
-    }
+  val isModern = uiState.themeMode == WeykyThemeMode.MODERN
+  val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
+  val isTactical = uiState.themeMode == WeykyThemeMode.TACTICAL
 
-    // 2. WEYKY Text Input Area (Center, Flexible Width weight(1f))
-    val activeInputAccent = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else borderColor
-    JarvisHudCard(
-      accentColor = activeInputAccent,
-      containerColor = panelBg,
-      cutCornerSize = 12.dp,
-      tabPosition = HudTabPosition.NONE,
-      modifier = Modifier
-        .weight(1f)
-        .height(48.dp)
-        .testTag("home_bottom_input_area")
+  val flankShape = when {
+    isTactical -> CutCornerShape(8.dp)
+    isModern -> RoundedCornerShape(16.dp)
+    else -> RoundedCornerShape(12.dp)
+  }
+  val pillShape = when {
+    isTactical -> CutCornerShape(10.dp)
+    isModern -> RoundedCornerShape(26.dp)
+    else -> RoundedCornerShape(14.dp)
+  }
+
+  val modernGlassGradient = Brush.verticalGradient(
+    listOf(Color(0x550F2C4C), Color(0x330B1B30))
+  )
+  val modernBorderBrush = Brush.linearGradient(
+    listOf(Color(0xFF00E5FF), Color(0xFF0088FF))
+  )
+  val minimalSlateBg = Color(0xFF101924)
+  val minimalBorderColor = Color(0xFF1E2D3D)
+
+  CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    Row(
+      modifier = modifier
+        .fillMaxWidth()
+        .testTag("home_bottom_bar"),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.CenterVertically
     ) {
-      Row(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+      // 1. LEFT BUTTON: Installed Apps (3x3 grid)
+      val appsModifier = when {
+        isModern -> Modifier
+          .size(50.dp)
+          .shadow(6.dp, flankShape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
+          .clip(flankShape)
+          .background(modernGlassGradient)
+          .border(1.5.dp, modernBorderBrush, flankShape)
+          .clickable(onClick = onToggleAppDrawer)
+          .testTag("app_drawer_button")
+        isMinimal -> Modifier
+          .size(50.dp)
+          .clip(flankShape)
+          .background(minimalSlateBg)
+          .border(1.dp, minimalBorderColor, flankShape)
+          .clickable(onClick = onToggleAppDrawer)
+          .testTag("app_drawer_button")
+        else -> Modifier
+          .size(50.dp)
+          .clip(flankShape)
+          .background(panelBgElevated)
+          .border(1.5.dp, borderColor, flankShape)
+          .clickable(onClick = onToggleAppDrawer)
+          .testTag("app_drawer_button")
+      }
+      val appsIconTint = when {
+        isModern -> Color(0xFF00D2FF)
+        isMinimal -> Color(0xFF6E8094)
+        else -> borderColor
+      }
+
+      Box(
+        modifier = appsModifier,
+        contentAlignment = Alignment.Center
       ) {
-        // Voice Mic Button
-        IconButton(
-          onClick = onToggleVoice,
-          modifier = Modifier
-            .size(38.dp)
-            .testTag("voice_input_button")
-        ) {
-          Icon(
-            imageVector = Icons.Default.Mic,
-            contentDescription = if (uiState.isVoiceListening) "Listening... tap to cancel" else "Voice Input",
-            tint = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else borderColor,
-            modifier = Modifier.size(20.dp)
-          )
-        }
-
-        // Text Input Field
-        Box(
-          modifier = Modifier
-            .weight(1f)
-            .padding(horizontal = 4.dp),
-          contentAlignment = Alignment.CenterStart
-        ) {
-          if (uiState.inputQuery.isEmpty()) {
-            val hint = if (uiState.isVoiceListening) "Listening... تكلم الآن" else "Ask WEYKY anything..."
-            Text(
-              text = hint,
-              fontSize = 13.sp,
-              color = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else textSecondary,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-          }
-          BasicTextField(
-            value = uiState.inputQuery,
-            onValueChange = onQueryChange,
-            singleLine = true,
-            textStyle = TextStyle(
-              color = textPrimary,
-              fontSize = 14.sp,
-              fontWeight = FontWeight.Normal
-            ),
-            cursorBrush = SolidColor(borderColor),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = {
-              if (uiState.inputQuery.isNotBlank()) {
-                onQuerySubmit(uiState.inputQuery)
-                keyboardController?.hide()
-              }
-            }),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("ask_weyky_input")
-          )
-        }
-
-        // Submit Button
-        IconButton(
-          onClick = {
-            if (uiState.inputQuery.isNotBlank()) {
-              onQuerySubmit(uiState.inputQuery)
-              keyboardController?.hide()
-            } else {
-              onQuerySubmit("ماذا أفعل الآن؟")
-            }
-          },
-          modifier = Modifier
-            .size(36.dp)
-            .testTag("submit_query_button")
-        ) {
-          Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = "Send",
-            tint = borderColor,
-            modifier = Modifier.size(18.dp)
-          )
-        }
-      }
-    }
-
-    // 3. Installed Apps Button (Flank 2)
-    JarvisHudBadge(
-      accentColor = borderColor,
-      containerColor = panelBgElevated,
-      cutSize = 8.dp,
-      onClick = onToggleAppDrawer,
-      modifier = Modifier
-        .size(48.dp)
-        .testTag("app_drawer_button")
-    ) {
-      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Icon(
           imageVector = Icons.Default.Apps,
           contentDescription = "Applications",
-          tint = borderColor,
+          tint = appsIconTint,
+          modifier = Modifier.size(22.dp)
+        )
+      }
+
+      // 2. CENTER PILL: Input bar (... Ask WEYKY anything)
+      val pillModifier = when {
+        isModern -> Modifier
+          .weight(1f)
+          .height(50.dp)
+          .shadow(6.dp, pillShape, spotColor = Color(0x5500D2FF), ambientColor = Color(0x2200D2FF))
+          .clip(pillShape)
+          .background(modernGlassGradient)
+          .border(1.5.dp, modernBorderBrush, pillShape)
+          .testTag("home_bottom_input_area")
+        isMinimal -> Modifier
+          .weight(1f)
+          .height(50.dp)
+          .clip(pillShape)
+          .background(minimalSlateBg)
+          .border(1.dp, minimalBorderColor, pillShape)
+          .testTag("home_bottom_input_area")
+        else -> Modifier
+          .weight(1f)
+          .height(50.dp)
+          .clip(pillShape)
+          .background(panelBg)
+          .border(1.2.dp, borderColor, pillShape)
+          .testTag("home_bottom_input_area")
+      }
+
+      Box(
+        modifier = pillModifier,
+        contentAlignment = Alignment.CenterStart
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          // Left Arrow Icon
+          Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Send Query",
+            tint = if (uiState.inputQuery.isNotBlank()) Color(0xFF00D2FF) else Color(0xFF6B7E94),
+            modifier = Modifier
+              .size(19.dp)
+              .clickable {
+                if (uiState.inputQuery.isNotBlank()) {
+                  onQuerySubmit(uiState.inputQuery)
+                  keyboardController?.hide()
+                } else {
+                  onQuerySubmit("ماذا أفعل الآن؟")
+                }
+              }
+          )
+
+          Spacer(modifier = Modifier.width(10.dp))
+
+          // Center Input field
+          Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart
+          ) {
+            if (uiState.inputQuery.isEmpty()) {
+              val hint = if (uiState.isVoiceListening) "Listening... تكلم الآن" else "... Ask WEYKY anything"
+              Text(
+                text = hint,
+                fontSize = 13.5.sp,
+                color = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else Color(0xFF7A8B9E),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
+            BasicTextField(
+              value = uiState.inputQuery,
+              onValueChange = onQueryChange,
+              singleLine = true,
+              textStyle = TextStyle(
+                color = textPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Normal
+              ),
+              cursorBrush = SolidColor(Color(0xFF00D2FF)),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+              keyboardActions = KeyboardActions(onSend = {
+                if (uiState.inputQuery.isNotBlank()) {
+                  onQuerySubmit(uiState.inputQuery)
+                  keyboardController?.hide()
+                }
+              }),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ask_weyky_input")
+            )
+          }
+
+          Spacer(modifier = Modifier.width(8.dp))
+
+          // Right Mic button
+          IconButton(
+            onClick = onToggleVoice,
+            modifier = Modifier
+              .size(36.dp)
+              .testTag("voice_input_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.Mic,
+              contentDescription = "Voice Input",
+              tint = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else Color(0xFF00D2FF),
+              modifier = Modifier.size(20.dp)
+            )
+          }
+        }
+      }
+
+      // 3. RIGHT BUTTON: Settings (Gear icon)
+      val settingsModifier = when {
+        isModern -> Modifier
+          .size(50.dp)
+          .shadow(6.dp, flankShape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
+          .clip(flankShape)
+          .background(modernGlassGradient)
+          .border(1.5.dp, modernBorderBrush, flankShape)
+          .clickable(onClick = onOpenSettings)
+          .testTag("settings_button")
+        isMinimal -> Modifier
+          .size(50.dp)
+          .clip(flankShape)
+          .background(minimalSlateBg)
+          .border(1.dp, minimalBorderColor, flankShape)
+          .clickable(onClick = onOpenSettings)
+          .testTag("settings_button")
+        else -> Modifier
+          .size(50.dp)
+          .clip(flankShape)
+          .background(panelBgElevated)
+          .border(1.5.dp, borderColor, flankShape)
+          .clickable(onClick = onOpenSettings)
+          .testTag("settings_button")
+      }
+      val settingsIconTint = when {
+        isModern -> Color(0xFF00D2FF)
+        isMinimal -> Color(0xFF00D2FF)
+        else -> borderColor
+      }
+
+      Box(
+        modifier = settingsModifier,
+        contentAlignment = Alignment.Center
+      ) {
+        Icon(
+          imageVector = Icons.Default.Settings,
+          contentDescription = "Settings",
+          tint = settingsIconTint,
           modifier = Modifier.size(22.dp)
         )
       }
@@ -615,7 +694,8 @@ fun HomeInputCard(
   modifier: Modifier = Modifier
 ) {
   val activeInputAccent = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else borderColor
-  JarvisHudCard(
+  WeykyAdaptiveCard(
+    uiState = uiState,
     accentColor = activeInputAccent,
     containerColor = panelBg,
     cutCornerSize = 12.dp,
@@ -723,39 +803,94 @@ fun HomeLandscapeSettingsButton(
   textPrimary: Color,
   isRtl: Boolean,
   onClick: () -> Unit,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  themeMode: WeykyThemeMode = WeykyThemeMode.TACTICAL
 ) {
-  JarvisHudBadge(
-    accentColor = borderColor,
-    containerColor = panelBgElevated,
-    cutSize = 8.dp,
-    onClick = onClick,
-    modifier = modifier
-      .fillMaxWidth()
-      .height(48.dp)
-      .testTag("settings_button")
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(horizontal = 8.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.Center
+  val isModern = themeMode == WeykyThemeMode.MODERN
+  val isMinimal = themeMode == WeykyThemeMode.MINIMAL
+
+  if (themeMode == WeykyThemeMode.TACTICAL) {
+    JarvisHudBadge(
+      accentColor = borderColor,
+      containerColor = panelBgElevated,
+      cutSize = 8.dp,
+      onClick = onClick,
+      modifier = modifier
+        .fillMaxWidth()
+        .height(48.dp)
+        .testTag("settings_button")
     ) {
-      Icon(
-        imageVector = Icons.Default.Settings,
-        contentDescription = "Settings",
-        tint = borderColor,
-        modifier = Modifier.size(20.dp)
-      )
-      Spacer(modifier = Modifier.width(6.dp))
-      Text(
-        text = if (isRtl) "الإعدادات" else "Settings",
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = textPrimary,
-        maxLines = 1
-      )
+      Row(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+      ) {
+        Icon(
+          imageVector = Icons.Default.Settings,
+          contentDescription = "Settings",
+          tint = borderColor,
+          modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = if (isRtl) "الإعدادات" else "Settings",
+          fontSize = 12.sp,
+          fontWeight = FontWeight.SemiBold,
+          color = textPrimary,
+          maxLines = 1
+        )
+      }
+    }
+  } else {
+    val shape = if (isModern) RoundedCornerShape(16.dp) else RoundedCornerShape(12.dp)
+    val modernGradient = Brush.verticalGradient(listOf(Color(0x550F2C4C), Color(0x330B1B30)))
+    val modernBorder = Brush.linearGradient(listOf(Color(0xFF00E5FF), Color(0xFF0088FF)))
+    val btnMod = if (isModern) {
+      modifier
+        .fillMaxWidth()
+        .height(48.dp)
+        .shadow(6.dp, shape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
+        .clip(shape)
+        .background(modernGradient)
+        .border(1.5.dp, modernBorder, shape)
+        .clickable(onClick = onClick)
+        .testTag("settings_button")
+    } else {
+      modifier
+        .fillMaxWidth()
+        .height(48.dp)
+        .clip(shape)
+        .background(Color(0xFF101924))
+        .border(1.dp, Color(0xFF1E2D3D), shape)
+        .clickable(onClick = onClick)
+        .testTag("settings_button")
+    }
+    Box(
+      modifier = btnMod,
+      contentAlignment = Alignment.Center
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+      ) {
+        Icon(
+          imageVector = Icons.Default.Settings,
+          contentDescription = "Settings",
+          tint = Color(0xFF00D2FF),
+          modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = if (isRtl) "الإعدادات" else "Settings",
+          fontSize = 12.sp,
+          fontWeight = FontWeight.SemiBold,
+          color = textPrimary,
+          maxLines = 1
+        )
+      }
     }
   }
 }
@@ -771,39 +906,95 @@ fun HomeLandscapeAppDrawerButton(
   textPrimary: Color,
   isRtl: Boolean,
   onClick: () -> Unit,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  themeMode: WeykyThemeMode = WeykyThemeMode.TACTICAL
 ) {
-  JarvisHudBadge(
-    accentColor = borderColor,
-    containerColor = panelBgElevated,
-    cutSize = 8.dp,
-    onClick = onClick,
-    modifier = modifier
-      .fillMaxWidth()
-      .height(48.dp)
-      .testTag("app_drawer_button")
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(horizontal = 8.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.Center
+  val isModern = themeMode == WeykyThemeMode.MODERN
+  val isMinimal = themeMode == WeykyThemeMode.MINIMAL
+
+  if (themeMode == WeykyThemeMode.TACTICAL) {
+    JarvisHudBadge(
+      accentColor = borderColor,
+      containerColor = panelBgElevated,
+      cutSize = 8.dp,
+      onClick = onClick,
+      modifier = modifier
+        .fillMaxWidth()
+        .height(48.dp)
+        .testTag("app_drawer_button")
     ) {
-      Icon(
-        imageVector = Icons.Default.Apps,
-        contentDescription = "Applications",
-        tint = borderColor,
-        modifier = Modifier.size(20.dp)
-      )
-      Spacer(modifier = Modifier.width(6.dp))
-      Text(
-        text = if (isRtl) "التطبيقات" else "Apps",
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = textPrimary,
-        maxLines = 1
-      )
+      Row(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+      ) {
+        Icon(
+          imageVector = Icons.Default.Apps,
+          contentDescription = "Applications",
+          tint = borderColor,
+          modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = if (isRtl) "التطبيقات" else "Apps",
+          fontSize = 12.sp,
+          fontWeight = FontWeight.SemiBold,
+          color = textPrimary,
+          maxLines = 1
+        )
+      }
+    }
+  } else {
+    val shape = if (isModern) RoundedCornerShape(16.dp) else RoundedCornerShape(12.dp)
+    val modernGradient = Brush.verticalGradient(listOf(Color(0x550F2C4C), Color(0x330B1B30)))
+    val modernBorder = Brush.linearGradient(listOf(Color(0xFF00E5FF), Color(0xFF0088FF)))
+    val btnMod = if (isModern) {
+      modifier
+        .fillMaxWidth()
+        .height(48.dp)
+        .shadow(6.dp, shape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
+        .clip(shape)
+        .background(modernGradient)
+        .border(1.5.dp, modernBorder, shape)
+        .clickable(onClick = onClick)
+        .testTag("app_drawer_button")
+    } else {
+      modifier
+        .fillMaxWidth()
+        .height(48.dp)
+        .clip(shape)
+        .background(Color(0xFF101924))
+        .border(1.dp, Color(0xFF1E2D3D), shape)
+        .clickable(onClick = onClick)
+        .testTag("app_drawer_button")
+    }
+    val iconTint = if (isModern) Color(0xFF00D2FF) else Color(0xFF6E8094)
+    Box(
+      modifier = btnMod,
+      contentAlignment = Alignment.Center
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+      ) {
+        Icon(
+          imageVector = Icons.Default.Apps,
+          contentDescription = "Applications",
+          tint = iconTint,
+          modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = if (isRtl) "التطبيقات" else "Apps",
+          fontSize = 12.sp,
+          fontWeight = FontWeight.SemiBold,
+          color = textPrimary,
+          maxLines = 1
+        )
+      }
     }
   }
 }
@@ -825,7 +1016,8 @@ fun HomeTelemetryCard(
   val vertPadding = if (isCompact) 10.dp else 14.dp
   val horizPadding = if (isCompact) 10.dp else 14.dp
 
-  JarvisHudCard(
+  WeykyAdaptiveCard(
+    uiState = uiState,
     accentColor = borderColor,
     containerColor = panelBg,
     cutCornerSize = if (isCompact) 12.dp else 16.dp,
@@ -892,11 +1084,11 @@ fun HomeTelemetryCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
       ) {
-        Icon(
-          imageVector = Icons.Default.CloudQueue,
-          contentDescription = "Weather",
-          tint = borderColor,
-          modifier = Modifier.size(if (isCompact) 20.dp else 24.dp)
+        RealtimeSkyViewport(
+          weather = weather,
+          modifier = Modifier.size(if (isCompact) 28.dp else 34.dp),
+          shape = CutCornerShape(4.dp),
+          borderColor = borderColor.copy(alpha = 0.5f)
         )
         Spacer(modifier = Modifier.width(4.dp))
         Column(horizontalAlignment = Alignment.Start) {
@@ -1460,6 +1652,85 @@ private fun PortraitMusicPlayerContent(
 }
 
 @Composable
+fun MiniEqualizerBars(
+  isAnimated: Boolean,
+  color: Color = Color(0xFF00D2FF),
+  modifier: Modifier = Modifier
+) {
+  val infiniteTransition = rememberInfiniteTransition(label = "eq_bars")
+  val b1 by infiniteTransition.animateFloat(
+    initialValue = 4f, targetValue = 13f,
+    animationSpec = infiniteRepeatable(tween(450, easing = LinearEasing), RepeatMode.Reverse),
+    label = "b1"
+  )
+  val b2 by infiniteTransition.animateFloat(
+    initialValue = 12f, targetValue = 4f,
+    animationSpec = infiniteRepeatable(tween(350, easing = LinearEasing), RepeatMode.Reverse),
+    label = "b2"
+  )
+  val b3 by infiniteTransition.animateFloat(
+    initialValue = 5f, targetValue = 15f,
+    animationSpec = infiniteRepeatable(tween(520, easing = LinearEasing), RepeatMode.Reverse),
+    label = "b3"
+  )
+  val b4 by infiniteTransition.animateFloat(
+    initialValue = 10f, targetValue = 4f,
+    animationSpec = infiniteRepeatable(tween(380, easing = LinearEasing), RepeatMode.Reverse),
+    label = "b4"
+  )
+
+  Row(
+    modifier = modifier,
+    horizontalArrangement = Arrangement.spacedBy(2.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Box(Modifier.width(2.5.dp).height((if (isAnimated) b1 else 6f).dp).clip(CircleShape).background(color))
+    Box(Modifier.width(2.5.dp).height((if (isAnimated) b2 else 10f).dp).clip(CircleShape).background(color))
+    Box(Modifier.width(2.5.dp).height((if (isAnimated) b3 else 14f).dp).clip(CircleShape).background(color))
+    Box(Modifier.width(2.5.dp).height((if (isAnimated) b4 else 8f).dp).clip(CircleShape).background(color))
+  }
+}
+
+@Composable
+fun ModernMusicBadge(
+  isModern: Boolean,
+  modifier: Modifier = Modifier
+) {
+  Row(
+    modifier = modifier
+      .clip(RoundedCornerShape(10.dp))
+      .background(if (isModern) Color(0x3300D2FF) else Color(0xFF152230))
+      .border(0.8.dp, if (isModern) Color(0x6600D2FF) else Color(0xFF26384A), RoundedCornerShape(10.dp))
+      .padding(horizontal = 7.dp, vertical = 2.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(4.dp)
+  ) {
+    Text(
+      text = "MUSIC",
+      fontSize = 9.sp,
+      fontFamily = FontFamily.Monospace,
+      fontWeight = FontWeight.Bold,
+      letterSpacing = 1.sp,
+      color = Color(0xFF00D2FF)
+    )
+    if (isModern) {
+      Box(
+        modifier = Modifier
+          .size(5.dp)
+          .clip(CircleShape)
+          .background(Color(0xFF00D2FF))
+      )
+    } else {
+      Box(
+        modifier = Modifier
+          .size(5.dp)
+          .border(1.dp, Color(0xFF00D2FF), CircleShape)
+      )
+    }
+  }
+}
+
+@Composable
 fun HomeMusicCard(
   uiState: WeykyUiState,
   borderColor: Color,
@@ -1472,60 +1743,186 @@ fun HomeMusicCard(
   modifier: Modifier = Modifier,
   isLandscape: Boolean = false
 ) {
-  val configuration = LocalConfiguration.current
-  val effectiveIsLandscape = isLandscape || (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
   val mediaMeta = uiState.activeMediaMetadata
   val isMusicActivelyPlaying = uiState.isMusicPlaying || (mediaMeta?.isPlaying == true)
-  val hasActiveMedia = isMusicActivelyPlaying || (mediaMeta != null && !mediaMeta.title.isNullOrBlank())
+  val isModern = uiState.themeMode == WeykyThemeMode.MODERN
 
-  AnimatedVisibility(
-    visible = hasActiveMedia,
-    enter = fadeIn() + expandVertically(),
-    exit = fadeOut() + shrinkVertically(),
+  val trackTitle = mediaMeta?.title?.takeIf { it.isNotBlank() } ?: "تشغيل الموسيقى"
+  val trackArtist = mediaMeta?.artist?.takeIf { it.isNotBlank() } ?: "مشغل الصوت"
+  val artworkBitmap = mediaMeta?.artworkBitmap
+
+  Box(
     modifier = modifier
+      .fillMaxWidth()
+      .padding(top = 4.dp)
   ) {
-    val trackTitle = mediaMeta?.title?.takeIf { it.isNotBlank() } ?: "جاري تشغيل الموسيقى"
-    val trackArtist = mediaMeta?.artist?.takeIf { it.isNotBlank() } ?: "AUDIO STREAM // ACTIVE"
-    val artworkBitmap = mediaMeta?.artworkBitmap
+    WeykyAdaptiveCard(
+      uiState = uiState,
+      accentColor = borderColor,
+      containerColor = panelBgElevated,
+      cutCornerSize = 14.dp,
+      tabPosition = HudTabPosition.NONE,
+      modifier = Modifier
+        .fillMaxWidth()
+        .testTag("music_top_hud_card")
+    ) {
+      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+          // Top-Right MUSIC pill badge
+          ModernMusicBadge(
+            isModern = isModern,
+            modifier = Modifier
+              .align(Alignment.TopEnd)
+              .padding(top = 8.dp, end = 12.dp)
+          )
 
-    Column {
-      Spacer(modifier = Modifier.height(6.dp))
-      JarvisHudCard(
-        accentColor = borderColor,
-        containerColor = panelBgElevated,
-        cutCornerSize = 14.dp,
-        tabTitle = if (effectiveIsLandscape) "MINI PLAYER" else "MUSIC",
-        tabPosition = HudTabPosition.TOP_START,
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("music_top_hud_card")
-      ) {
-        if (effectiveIsLandscape) {
-          LandscapeMusicPlayerContent(
-            trackTitle = trackTitle,
-            trackArtist = trackArtist,
-            artworkBitmap = artworkBitmap,
-            isMusicActivelyPlaying = isMusicActivelyPlaying,
-            borderColor = borderColor,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            onToggleMediaPlayback = onToggleMediaPlayback,
-            onNextMediaTrack = onNextMediaTrack,
-            onPreviousMediaTrack = onPreviousMediaTrack
-          )
-        } else {
-          PortraitMusicPlayerContent(
-            trackTitle = trackTitle,
-            trackArtist = trackArtist,
-            artworkBitmap = artworkBitmap,
-            isMusicActivelyPlaying = isMusicActivelyPlaying,
-            borderColor = borderColor,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            onToggleMediaPlayback = onToggleMediaPlayback,
-            onNextMediaTrack = onNextMediaTrack,
-            onPreviousMediaTrack = onPreviousMediaTrack
-          )
+          // Main Horizontal Music Player Content
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            // 1. LEFT: Transport Controls (Previous, Large Play, Next)
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+              IconButton(
+                onClick = onPreviousMediaTrack,
+                modifier = Modifier
+                  .size(40.dp)
+                  .testTag("music_prev_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.SkipPrevious,
+                  contentDescription = "Previous Track",
+                  tint = if (isModern) Color(0xFFD1E4FA) else Color(0xFF7A8B9E),
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+
+              IconButton(
+                onClick = onToggleMediaPlayback,
+                modifier = Modifier
+                  .size(46.dp)
+                  .testTag("music_play_pause_button")
+              ) {
+                Box(
+                  modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(if (isModern) Color(0x3300D2FF) else Color(0x2200D2FF))
+                    .border(
+                      width = if (isModern) 2.dp else 1.5.dp,
+                      color = Color(0xFF00D2FF),
+                      shape = CircleShape
+                    ),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    imageVector = if (isMusicActivelyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isMusicActivelyPlaying) "Pause Music" else "Play Music",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                  )
+                }
+              }
+
+              IconButton(
+                onClick = onNextMediaTrack,
+                modifier = Modifier
+                  .size(40.dp)
+                  .testTag("music_next_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.SkipNext,
+                  contentDescription = "Next Track",
+                  tint = if (isModern) Color(0xFFD1E4FA) else Color(0xFF7A8B9E),
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // 2. MIDDLE: Song Title, Artist & Equalizer bars
+            Column(
+              modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp),
+              horizontalAlignment = Alignment.End,
+              verticalArrangement = Arrangement.Center
+            ) {
+              Text(
+                text = trackTitle,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("music_card_title")
+              )
+              Spacer(modifier = Modifier.height(2.dp))
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
+                Text(
+                  text = trackArtist,
+                  fontSize = 11.sp,
+                  color = if (isModern) Color(0xFF8EB2D6) else Color(0xFF7A8B9E),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                  modifier = Modifier.testTag("music_card_artist")
+                )
+                MiniEqualizerBars(
+                  isAnimated = isMusicActivelyPlaying,
+                  color = Color(0xFF00D2FF)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // 3. RIGHT: Album Art Thumbnail
+            Box(
+              modifier = Modifier
+                .size(46.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                  Brush.linearGradient(
+                    colors = listOf(
+                      Color(0xFFFF2A85),
+                      Color(0xFF8B2CF5),
+                      Color(0xFF0077FF)
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(100f, 100f)
+                  )
+                )
+                .clickable(onClick = onToggleMediaPlayback)
+                .testTag("music_card_image"),
+              contentAlignment = Alignment.Center
+            ) {
+              if (artworkBitmap != null) {
+                Image(
+                  bitmap = artworkBitmap.asImageBitmap(),
+                  contentDescription = "Track Artwork",
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.fillMaxSize()
+                )
+              } else {
+                Icon(
+                  imageVector = Icons.Default.PlayArrow,
+                  contentDescription = "Play Track",
+                  tint = Color.White,
+                  modifier = Modifier.size(22.dp)
+                )
+              }
+            }
+          }
         }
       }
     }
@@ -1553,40 +1950,41 @@ fun HomeCoreSection(
     calculateLunarAstronomy(weather)
   }
 
-  BoxWithConstraints(
+  Column(
     modifier = modifier,
-    contentAlignment = Alignment.Center
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center
   ) {
-    // True adaptive core sizing:
-    // When normal space is available, uses full coreSizeDp.
-    // When keyboard appears or available height decreases, the core gracefully adapts
-    // down to fit the measured parent container without pushing controls off-screen!
-    val maxAvailableDim = minOf(maxWidth, maxHeight)
-    val adaptiveSize = if (maxAvailableDim > 0.dp && maxAvailableDim < coreSizeDp) {
-      maxAvailableDim * 0.94f
-    } else {
-      coreSizeDp
-    }
-
-    WeatherAdaptiveCoreLayer(
-      uiState = uiState,
-      coreSizeDp = adaptiveSize.coerceAtLeast(48.dp)
+    BoxWithConstraints(
+      contentAlignment = Alignment.Center
     ) {
-      WeykyCoreView(
-        visualState = uiState.visualState,
-        sizeDp = adaptiveSize.coerceAtLeast(48.dp),
-        isPowerSaving = uiState.isPowerSaving,
-        isVoiceListening = uiState.isVoiceListening,
-        isSpeakingAloud = uiState.isSpeakingAloud,
-        isMusicPlaying = uiState.isMusicPlaying,
-        isCharging = isDeviceCharging,
-        batteryPercentage = currentBatteryPct,
-        voiceEnergyLevel = uiState.voiceEnergyLevel,
-        isNightMode = isNight,
-        isMoonVisible = lunarAstronomy.isMoonInAppearanceWindow,
-        lunarCyclePhase = lunarAstronomy.cyclePhase,
-        onClick = onToggleVoice
-      )
+      val maxAvailableDim = minOf(maxWidth, maxHeight)
+      val adaptiveSize = if (maxAvailableDim > 0.dp && maxAvailableDim < coreSizeDp) {
+        maxAvailableDim * 0.94f
+      } else {
+        coreSizeDp
+      }
+
+      WeatherAdaptiveCoreLayer(
+        uiState = uiState,
+        coreSizeDp = adaptiveSize.coerceAtLeast(48.dp)
+      ) {
+        WeykyCoreView(
+          visualState = uiState.visualState,
+          sizeDp = adaptiveSize.coerceAtLeast(48.dp),
+          isPowerSaving = uiState.isPowerSaving,
+          isVoiceListening = uiState.isVoiceListening,
+          isSpeakingAloud = uiState.isSpeakingAloud,
+          isMusicPlaying = uiState.isMusicPlaying,
+          isCharging = isDeviceCharging,
+          batteryPercentage = currentBatteryPct,
+          voiceEnergyLevel = uiState.voiceEnergyLevel,
+          isNightMode = isNight,
+          isMoonVisible = lunarAstronomy.isMoonInAppearanceWindow,
+          lunarCyclePhase = lunarAstronomy.cyclePhase,
+          onClick = onToggleVoice
+        )
+      }
     }
   }
 }
@@ -1609,7 +2007,8 @@ fun HomeResponseCard(
     exit = fadeOut() + shrinkVertically(),
     modifier = modifier
   ) {
-    JarvisHudCard(
+    WeykyAdaptiveCard(
+      uiState = uiState,
       accentColor = borderColor,
       containerColor = panelBgElevated,
       cutCornerSize = 14.dp,
@@ -1745,7 +2144,8 @@ fun HomeCommandInputCard(
 ) {
   val activeInputAccent = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else borderColor
 
-  JarvisHudCard(
+  WeykyAdaptiveCard(
+    uiState = uiState,
     accentColor = activeInputAccent,
     containerColor = panelBg,
     cutCornerSize = 16.dp,
@@ -2008,7 +2408,8 @@ fun HomeContextAlertCard(
     val textPrimary = JarvisHudColors.textPrimary(isLight)
     val textSecondary = JarvisHudColors.textSecondary(isLight)
 
-    JarvisHudCard(
+    WeykyAdaptiveCard(
+      uiState = uiState,
       accentColor = borderColor,
       containerColor = panelBg,
       cutCornerSize = 16.dp,

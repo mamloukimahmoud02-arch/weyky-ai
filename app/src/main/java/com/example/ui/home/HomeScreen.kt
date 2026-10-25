@@ -558,6 +558,7 @@ private fun LandscapeThreeColumnHomeScreen(
         textPrimary = textPrimary,
         isRtl = deviceProfile.isRtl,
         onClick = onOpenSettings,
+        themeMode = uiState.themeMode,
         modifier = Modifier.fillMaxWidth()
       )
     }
@@ -671,6 +672,7 @@ private fun LandscapeThreeColumnHomeScreen(
         textPrimary = textPrimary,
         isRtl = deviceProfile.isRtl,
         onClick = onToggleAppDrawer,
+        themeMode = uiState.themeMode,
         modifier = Modifier.fillMaxWidth()
       )
     }

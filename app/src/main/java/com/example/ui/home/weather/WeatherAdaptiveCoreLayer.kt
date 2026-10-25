@@ -489,7 +489,8 @@ private fun DrawScope.drawGoldenSolarAtmosphere(
 }
 
 /**
- * Draws the luminous silver-white lunar atmospheric glow behind the White Moon core at night.
+ * Draws the luminous electric cyan-blue & ice-white lunar atmospheric corona and surrounding
+ * cosmic starfield behind the Moon core at night, matching the reference Moon artwork.
  */
 private fun DrawScope.drawWhiteLunarAtmosphere(
   center: Offset,
@@ -498,15 +499,16 @@ private fun DrawScope.drawWhiteLunarAtmosphere(
   illumination: Float,
   alpha: Float
 ) {
-  val intensity = (0.35f + 0.65f * illumination).coerceIn(0.35f, 1f) * alpha
-  val outerHaloRadius = coreRadius * (1.45f + 0.30f * illumination) * pulse
+  val intensity = (0.55f + 0.45f * illumination).coerceIn(0.45f, 1f) * alpha
+  val outerHaloRadius = coreRadius * (1.62f + 0.20f * illumination) * pulse
 
+  // Deep electric azure & cyan radial corona
   drawCircle(
     brush = Brush.radialGradient(
-      0.0f to Color(0xFFFFFFFF).copy(alpha = 0.62f * intensity),
-      0.42f to Color(0xFFF1F5F9).copy(alpha = 0.42f * intensity),
-      0.68f to Color(0xFFCBD5E1).copy(alpha = 0.24f * intensity),
-      0.88f to Color(0xFF64748B).copy(alpha = 0.10f * intensity),
+      0.0f to Color(0xFFFFFFFF).copy(alpha = 0.78f * intensity),
+      0.52f to Color(0xFF00F0FF).copy(alpha = 0.62f * intensity),
+      0.68f to Color(0xFF00B4D8).copy(alpha = 0.38f * intensity),
+      0.84f to Color(0xFF0284C7).copy(alpha = 0.18f * intensity),
       1.0f to Color.Transparent,
       center = center,
       radius = outerHaloRadius
@@ -514,6 +516,25 @@ private fun DrawScope.drawWhiteLunarAtmosphere(
     radius = outerHaloRadius,
     center = center
   )
+
+  // Subtle surrounding starfield dust matching the reference image
+  val starAngles = floatArrayOf(
+    0.25f, 0.68f, 1.15f, 1.72f, 2.18f, 2.64f, 3.05f, 3.48f,
+    3.92f, 4.35f, 4.82f, 5.28f, 5.74f, 6.10f
+  )
+  for (i in starAngles.indices) {
+    val angle = starAngles[i]
+    val dist = coreRadius * (1.18f + (i % 4) * 0.14f)
+    val sx = center.x + cos(angle) * dist
+    val sy = center.y + sin(angle) * dist
+    val starAlpha = ((0.35f + (i % 3) * 0.22f) * intensity).coerceIn(0f, 0.9f)
+    val starColor = if (i % 2 == 0) Color.White else Color(0xFF7DD3FC)
+    drawCircle(
+      color = starColor.copy(alpha = starAlpha),
+      radius = if (i % 3 == 0) 1.9f else 1.2f,
+      center = Offset(sx, sy)
+    )
+  }
 }
 
 /**
@@ -744,27 +765,27 @@ internal object VolumetricCloudGenerator {
         val b: Float
 
         if (isNight) {
-          // Nighttime: Deep Midnight Slate -> Cool Silver Crevice -> Pure White-Silver Lunar Rim
+          // Nighttime: Deep Midnight Sapphire -> Electric Cyan-Blue Crevice -> Ice-White Lunar Rim
           if (totalLight < 0.30f) {
             val t = totalLight / 0.30f
-            r = 10f + (30f - 10f) * t
-            g = 15f + (41f - 15f) * t
-            b = 28f + (59f - 28f) * t
+            r = 8f + (18f - 8f) * t
+            g = 14f + (36f - 14f) * t
+            b = 28f + (68f - 28f) * t
           } else if (totalLight < 0.62f) {
             val t = (totalLight - 0.30f) / 0.32f
-            r = 30f + (148f - 30f) * t
-            g = 41f + (163f - 41f) * t
-            b = 59f + (184f - 59f) * t
+            r = 18f + (14f - 18f) * t
+            g = 36f + (165f - 36f) * t
+            b = 68f + (233f - 68f) * t
           } else if (totalLight < 0.85f) {
             val t = (totalLight - 0.62f) / 0.23f
-            r = 148f + (226f - 148f) * t
-            g = 163f + (232f - 163f) * t
-            b = 184f + (240f - 184f) * t
+            r = 14f + (186f - 14f) * t
+            g = 165f + (230f - 165f) * t
+            b = 233f + (253f - 233f) * t
           } else {
             val t = (totalLight - 0.85f) / 0.15f
-            r = 226f + (255f - 226f) * t
-            g = 232f + (255f - 232f) * t
-            b = 240f + (255f - 240f) * t
+            r = 186f + (255f - 186f) * t
+            g = 230f + (255f - 230f) * t
+            b = 253f + (255f - 253f) * t
           }
         } else {
           // Daytime: Deep Charcoal Shadow -> Warm Amber Crevice -> Blazing Golden Solar Rim

@@ -1,6 +1,8 @@
 package com.example.rendering.renderer
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
@@ -43,8 +46,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.rendering.visual_state.CoreVisualState
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -169,7 +177,7 @@ fun WeykyCoreView(
     isCharging && isIdleOrChargingState ->
       getDynamicChargingColor(normalizedBatteryLevel, driftPhase, 0f)
     isIdleNightMoon ->
-      Color(0xFFE2E8F0) // Luminous Silver-White Moon Primary
+      Color(0xFF00E5FF) // Electric Cyan-Blue Lunar Glow Primary
     isIdleMoonlessNight ->
       Color(0xFF0F3460) // Deep Starry Night Primary
     else ->
@@ -181,7 +189,7 @@ fun WeykyCoreView(
     isCharging && isIdleOrChargingState ->
       getDynamicChargingColor(normalizedBatteryLevel, driftPhase, 0.33f)
     isIdleNightMoon ->
-      Color(0xFFCBD5E1) // Soft Pearl-Silver Secondary
+      Color(0xFF0284C7) // Deep Azure-Sapphire Lunar Secondary
     isIdleMoonlessNight ->
       Color(0xFF16213E) // Midnight Indigo Secondary
     else ->
@@ -193,7 +201,7 @@ fun WeykyCoreView(
     isCharging && isIdleOrChargingState ->
       getDynamicChargingColor(normalizedBatteryLevel, driftPhase, 0.66f)
     isIdleNightMoon ->
-      Color(0xFFFFFFFF) // Pure Brilliant White Moon Accent
+      Color(0xFFFFFFFF) // Pure Incandescent White-Cyan Moon Rim Accent
     isIdleMoonlessNight ->
       Color(0xFF38BDF8) // Subtle Starlight Cyan Accent
     else ->
@@ -215,6 +223,15 @@ fun WeykyCoreView(
     animationSpec = tween(durationMillis = 450),
     label = "CoreAccentColor"
   )
+
+  val context = LocalContext.current
+  val lunarSurfaceBitmap = remember(isIdleNightMoon) {
+    if (isIdleNightMoon) {
+      loadOrGenerateReferenceMoonBitmap(context = context, sizePx = 320)
+    } else {
+      null
+    }
+  }
 
   // Pre-compute 3D spherical lunar phase shadow mask when in Night Moon mode
   val quantizedPhase = ((lunarCyclePhase.coerceIn(0f, 1f) * 100f).toInt()) / 100f
@@ -298,27 +315,47 @@ fun WeykyCoreView(
       // OUTER AMBIENT CORONA & REACTIVE SONIC / POWER HALOS (Drawn outside the core rim)
       // =========================================================================
 
-      // A. Ambient Outer Bloom
-      val outerBloomRadius = radius * (1.16f + 0.08f * maxOf(
+      // A. Ambient Outer Bloom & Electric Cyan Lunar Corona
+      val outerBloomRadius = radius * (if (isIdleNightMoon) 1.32f else (1.16f + 0.08f * maxOf(
         listeningPresence * micLiveEnergy,
         speakingPresence * speechCadenceEnergy,
         musicPresence * musicBeatEnergy,
         chargingPresence * (0.4f + 0.5f * chargeSurge)
-      ))
+      )))
       val effectiveGlow = maxOf(visualState.glowIntensity, chargingPresence * 0.82f)
-      drawCircle(
-        brush = Brush.radialGradient(
-          colors = listOf(
-            animatedAccent.copy(alpha = 0.34f * effectiveGlow),
-            animatedPrimary.copy(alpha = 0.15f * effectiveGlow),
-            Color.Transparent
+      if (isIdleNightMoon) {
+        // Multi-stage Electric Cyan-Blue Lunar Corona matching the reference Moon artwork
+        drawCircle(
+          brush = Brush.radialGradient(
+            colorStops = arrayOf(
+              0.0f to Color(0xFF00F0FF).copy(alpha = 0.72f),
+              0.68f to Color(0xFF00E5FF).copy(alpha = 0.58f),
+              0.80f to Color(0xFF00B4D8).copy(alpha = 0.36f),
+              0.91f to Color(0xFF0284C7).copy(alpha = 0.16f),
+              1.0f to Color.Transparent
+            ),
+            center = center,
+            radius = outerBloomRadius
           ),
+          radius = outerBloomRadius,
           center = center,
-          radius = outerBloomRadius
-        ),
-        radius = outerBloomRadius,
-        center = center
-      )
+          blendMode = BlendMode.Plus
+        )
+      } else {
+        drawCircle(
+          brush = Brush.radialGradient(
+            colors = listOf(
+              animatedAccent.copy(alpha = 0.34f * effectiveGlow),
+              animatedPrimary.copy(alpha = 0.15f * effectiveGlow),
+              Color.Transparent
+            ),
+            center = center,
+            radius = outerBloomRadius
+          ),
+          radius = outerBloomRadius,
+          center = center
+        )
+      }
 
       // A2. Ascending Charging Energy Droplets (Launching from the very bottom of the screen at the charging port & merging into the sphere)
       if (chargingPresence > 0.01f) {
@@ -866,14 +903,15 @@ fun WeykyCoreView(
           blendMode = BlendMode.Screen
         )
 
-        // LAYER 8: Internal atmospheric vignette around the circular window rim for deep 3D curvature
+        // LAYER 8: Internal atmospheric vignette / lunar limb glow around the circular window rim
         val vignetteBrush = Brush.radialGradient(
           colorStops = when {
             isIdleNightMoon -> arrayOf(
               0.0f to Color.Transparent,
-              0.74f to Color.Transparent,
-              0.91f to Color(0x4464748B),
-              1.0f to Color(0x88334155)
+              0.78f to Color.Transparent,
+              0.92f to Color(0x6600E5FF),
+              0.97f to Color(0xAABAE6FD),
+              1.0f to Color(0xEEFFFFFF)
             )
             isPureIdle && !isNightMode -> arrayOf(
               0.0f to Color.Transparent,
@@ -893,16 +931,45 @@ fun WeykyCoreView(
         )
         drawCircle(brush = vignetteBrush, radius = radius, center = center)
 
-        // LAYER 9: 3D Spherical Lunar Phase Terminator Shadow (when in Night White Moon mode)
-        // Shapes the living White Core itself into Crescent (هلال), Quarter (تربيع), Gibbous (أحدب), or Full Moon (بدر)
-        if (isIdleNightMoon && lunarPhaseShadowBitmap != null) {
+        // LAYER 9: High-Definition Blue-White Lunar Surface (Maria, Craters, Tycho Rays) & 3D Phase Shading
+        if (isIdleNightMoon) {
           val diameterPx = (radius * 2f).toInt().coerceAtLeast(2)
           val topLeftX = (center.x - radius).toInt()
           val topLeftY = (center.y - radius).toInt()
-          drawImage(
-            image = lunarPhaseShadowBitmap,
-            dstOffset = IntOffset(topLeftX, topLeftY),
-            dstSize = IntSize(diameterPx, diameterPx)
+
+          if (lunarSurfaceBitmap != null) {
+            drawImage(
+              image = lunarSurfaceBitmap,
+              dstOffset = IntOffset(topLeftX, topLeftY),
+              dstSize = IntSize(diameterPx, diameterPx),
+              alpha = 0.96f
+            )
+          }
+
+          if (lunarPhaseShadowBitmap != null) {
+            drawImage(
+              image = lunarPhaseShadowBitmap,
+              dstOffset = IntOffset(topLeftX, topLeftY),
+              dstSize = IntSize(diameterPx, diameterPx)
+            )
+          }
+
+          // Re-reinforce the incandescent white-cyan inner limb glow over the lunar surface
+          drawCircle(
+            brush = Brush.radialGradient(
+              colorStops = arrayOf(
+                0.0f to Color.Transparent,
+                0.84f to Color.Transparent,
+                0.94f to Color(0x6600E5FF),
+                0.98f to Color(0xCCFFFFFF),
+                1.0f to Color(0xFFFFFFFF)
+              ),
+              center = center,
+              radius = radius
+            ),
+            radius = radius,
+            center = center,
+            blendMode = BlendMode.Plus
           )
         }
       }
@@ -910,55 +977,309 @@ fun WeykyCoreView(
       // =========================================================================
       // CRISP PRECISION OUTER BOUNDARY RINGS
       // =========================================================================
-      drawCircle(
-        brush = Brush.radialGradient(
-          colors = listOf(
-            animatedAccent.copy(alpha = 0.55f * visualState.glowIntensity),
-            animatedPrimary.copy(alpha = 0.25f),
-            Color.Transparent
-          ),
+      if (isIdleNightMoon) {
+        // Outer Electric Cyan-Blue Neon Bloom Ring
+        drawCircle(
+          color = Color(0x9900E5FF),
+          radius = radius * 1.022f,
           center = center,
-          radius = radius * 1.05f
-        ),
-        radius = radius * 1.02f,
-        center = center,
-        style = Stroke(width = 2.6f)
-      )
-      drawCircle(
-        color = Color(0x40FFFFFF),
-        radius = radius,
-        center = center,
-        style = Stroke(width = 1.1f)
-      )
+          style = Stroke(width = 6.5f),
+          blendMode = BlendMode.Plus
+        )
+        // Mid Ice-Cyan Halo Ring
+        drawCircle(
+          color = Color(0xCC7DD3FC),
+          radius = radius * 1.008f,
+          center = center,
+          style = Stroke(width = 3.4f),
+          blendMode = BlendMode.Plus
+        )
+        // Razor-Sharp Incandescent Pure White Rim Ring
+        drawCircle(
+          color = Color(0xFFFFFFFF),
+          radius = radius,
+          center = center,
+          style = Stroke(width = 2.2f)
+        )
+      } else {
+        drawCircle(
+          brush = Brush.radialGradient(
+            colors = listOf(
+              animatedAccent.copy(alpha = 0.55f * visualState.glowIntensity),
+              animatedPrimary.copy(alpha = 0.25f),
+              Color.Transparent
+            ),
+            center = center,
+            radius = radius * 1.05f
+          ),
+          radius = radius * 1.02f,
+          center = center,
+          style = Stroke(width = 2.6f)
+        )
+        drawCircle(
+          color = Color(0x40FFFFFF),
+          radius = radius,
+          center = center,
+          style = Stroke(width = 1.1f)
+        )
+      }
     }
   }
 }
 
 /**
- * Generates a 3D spherical lunar terminator shadow mask for the White Moon Core.
+ * Loads the user-provided reference Moon artwork (`aistudio/______2b58ee5a.jpg`), auto-detects
+ * its circular blazing white-cyan rim, and extracts the exact circular lunar sphere so that
+ * it matches the WEYKY Core diameter pixel-for-pixel. Falls back to the high-resolution
+ * procedural blue-white lunar topography generator if asset decoding is unavailable.
+ */
+private fun loadOrGenerateReferenceMoonBitmap(context: Context, sizePx: Int): ImageBitmap {
+  try {
+    context.assets.open("aistudio/______2b58ee5a.jpg").use { stream ->
+      val src = BitmapFactory.decodeStream(stream)
+      if (src != null && src.width > 64 && src.height > 64) {
+        val sw = src.width
+        val sh = src.height
+        val srcPixels = IntArray(sw * sh)
+        src.getPixels(srcPixels, 0, sw, 0, 0, sw, sh)
+
+        // Detect the bright white-cyan rim along horizontal and vertical centerlines
+        val midY = sh / 2
+        val midX = sw / 2
+
+        var leftX = (sw * 0.28f).toInt()
+        for (x in 0 until midX) {
+          val c = srcPixels[midY * sw + x]
+          val r = (c shr 16) and 0xFF
+          val g = (c shr 8) and 0xFF
+          val b = c and 0xFF
+          if (r > 190 && g > 230 && b > 240) {
+            leftX = x
+            break
+          }
+        }
+
+        var rightX = (sw * 0.72f).toInt()
+        for (x in (sw - 1) downTo midX) {
+          val c = srcPixels[midY * sw + x]
+          val r = (c shr 16) and 0xFF
+          val g = (c shr 8) and 0xFF
+          val b = c and 0xFF
+          if (r > 190 && g > 230 && b > 240) {
+            rightX = x
+            break
+          }
+        }
+
+        var topY = (sh * 0.068f).toInt()
+        for (y in 0 until midY) {
+          val c = srcPixels[y * sw + midX]
+          val r = (c shr 16) and 0xFF
+          val g = (c shr 8) and 0xFF
+          val b = c and 0xFF
+          if (r > 190 && g > 230 && b > 240) {
+            topY = y
+            break
+          }
+        }
+
+        var bottomY = (sh * 0.932f).toInt()
+        for (y in (sh - 1) downTo midY) {
+          val c = srcPixels[y * sw + midX]
+          val r = (c shr 16) and 0xFF
+          val g = (c shr 8) and 0xFF
+          val b = c and 0xFF
+          if (r > 190 && g > 230 && b > 240) {
+            bottomY = y
+            break
+          }
+        }
+
+        val detectedRx = (rightX - leftX) * 0.5f
+        val detectedRy = (bottomY - topY) * 0.5f
+        val validDetection = detectedRx in (sh * 0.34f)..(sh * 0.49f) &&
+          detectedRy in (sh * 0.34f)..(sh * 0.49f)
+
+        val cx = if (validDetection) (leftX + rightX) * 0.5f else sw * 0.50f
+        val cy = if (validDetection) (topY + bottomY) * 0.5f else sh * 0.50f
+        val rMoon = if (validDetection) (detectedRx + detectedRy) * 0.5f else sh * 0.432f
+
+        val outPixels = IntArray(sizePx * sizePx)
+        val halfOut = sizePx * 0.5f
+
+        for (py in 0 until sizePx) {
+          val ny = (py + 0.5f - halfOut) / halfOut
+          val rowOffset = py * sizePx
+          for (px in 0 until sizePx) {
+            val nx = (px + 0.5f - halfOut) / halfOut
+            val r2 = nx * nx + ny * ny
+            if (r2 > 1.0f) {
+              outPixels[rowOffset + px] = 0
+              continue
+            }
+
+            val sx = (cx + nx * rMoon).coerceIn(0f, (sw - 1).toFloat())
+            val sy = (cy + ny * rMoon).coerceIn(0f, (sh - 1).toFloat())
+            val x0 = sx.toInt().coerceIn(0, sw - 1)
+            val y0 = sy.toInt().coerceIn(0, sh - 1)
+            val x1 = (x0 + 1).coerceAtMost(sw - 1)
+            val y1 = (y0 + 1).coerceAtMost(sh - 1)
+            val fx = sx - x0
+            val fy = sy - y0
+
+            val c00 = srcPixels[y0 * sw + x0]
+            val c10 = srcPixels[y0 * sw + x1]
+            val c01 = srcPixels[y1 * sw + x0]
+            val c11 = srcPixels[y1 * sw + x1]
+
+            val rCol = bilinearChannel((c00 shr 16) and 0xFF, (c10 shr 16) and 0xFF, (c01 shr 16) and 0xFF, (c11 shr 16) and 0xFF, fx, fy)
+            val gCol = bilinearChannel((c00 shr 8) and 0xFF, (c10 shr 8) and 0xFF, (c01 shr 8) and 0xFF, (c11 shr 8) and 0xFF, fx, fy)
+            val bCol = bilinearChannel(c00 and 0xFF, c10 and 0xFF, c01 and 0xFF, c11 and 0xFF, fx, fy)
+
+            val edgeAlpha = ((1.0f - sqrt(r2)) / 0.025f).coerceIn(0f, 1f)
+            val aCol = (edgeAlpha * 255f).toInt().coerceIn(0, 255)
+            outPixels[rowOffset + px] = AndroidColor.argb(aCol, rCol, gCol, bCol)
+          }
+        }
+
+        val outBitmap = Bitmap.createBitmap(outPixels, sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        return outBitmap.asImageBitmap()
+      }
+    }
+  } catch (_: Exception) {
+    // Fallback to procedural high-res lunar topography generator below
+  }
+  return generateProceduralBlueWhiteMoonBitmap(sizePx)
+}
+
+private fun bilinearChannel(c00: Int, c10: Int, c01: Int, c11: Int, fx: Float, fy: Float): Int {
+  val top = c00 + (c10 - c00) * fx
+  val bottom = c01 + (c11 - c01) * fx
+  return (top + (bottom - top) * fy).toInt().coerceIn(0, 255)
+}
+
+/**
+ * High-definition procedural 3D Blue-White Lunar Surface generator reproducing the exact
+ * lunar maria (Mare Imbrium, Serenitatis, Tranquillitatis, Crisium), bright icy highlands,
+ * and radiating Tycho crater rays in the lower-right quadrant.
+ */
+private fun generateProceduralBlueWhiteMoonBitmap(sizePx: Int): ImageBitmap {
+  val pixels = IntArray(sizePx * sizePx)
+  val r = sizePx * 0.5f
+
+  fun hash(ix: Int, iy: Int, seed: Int): Float {
+    var n = ix * 374761393 + iy * 668265263 + seed * 1442695041
+    n = (n xor (n ushr 13)) * 1274126177
+    n = n xor (n ushr 16)
+    return (n and 0x7fffffff).toFloat() / 2147483647.0f
+  }
+
+  fun noise2D(x: Float, y: Float, seed: Int): Float {
+    val ix = floor(x).toInt()
+    val iy = floor(y).toInt()
+    val fx = x - ix
+    val fy = y - iy
+    val ux = fx * fx * (3f - 2f * fx)
+    val uy = fy * fy * (3f - 2f * fy)
+    val a = hash(ix, iy, seed)
+    val b = hash(ix + 1, iy, seed)
+    val c = hash(ix, iy + 1, seed)
+    val d = hash(ix + 1, iy + 1, seed)
+    return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy
+  }
+
+  fun fbm(px: Float, py: Float, seed: Int, octaves: Int = 5): Float {
+    var v = 0f
+    var amp = 0.5f
+    var x = px
+    var y = py
+    var norm = 0f
+    for (i in 0 until octaves) {
+      v += amp * noise2D(x, y, seed + i * 97)
+      norm += amp
+      val nx = (0.8f * x - 0.6f * y) * 2.05f + 7.3f
+      val ny = (0.6f * x + 0.8f * y) * 2.05f + 19.1f
+      x = nx
+      y = ny
+      amp *= 0.5f
+    }
+    return v / norm
+  }
+
+  for (py in 0 until sizePx) {
+    val ny = (py + 0.5f - r) / r
+    val rowOffset = py * sizePx
+    for (px in 0 until sizePx) {
+      val nx = (px + 0.5f - r) / r
+      val r2 = nx * nx + ny * ny
+      if (r2 > 1.0f) {
+        pixels[rowOffset + px] = 0
+        continue
+      }
+      val nz = sqrt(max(0f, 1f - r2))
+      // Spherical projection coordinates
+      val sx = nx / (0.65f + 0.35f * nz)
+      val sy = ny / (0.65f + 0.35f * nz)
+
+      val warpX = fbm(sx * 3.2f, sy * 3.2f, 101, 4) - 0.5f
+      val warpY = fbm(sx * 3.2f + 4.1f, sy * 3.2f + 2.7f, 202, 4) - 0.5f
+      val detail = fbm(sx * 6.5f + warpX * 1.4f, sy * 6.5f + warpY * 1.4f, 303, 5)
+
+      // Lunar Maria basins (dark sapphire-blue regions matching the reference image)
+      val wx = sx + warpX * 0.28f
+      val wy = sy + warpY * 0.28f
+      val mImbrium = exp(-6.5f * ((wx + 0.26f).pow(2) + (wy + 0.16f).pow(2)))
+      val mSerenitatis = exp(-8.0f * ((wx - 0.04f).pow(2) + (wy + 0.12f).pow(2)))
+      val mTranquillitatis = exp(-7.5f * ((wx - 0.14f).pow(2) + (wy - 0.08f).pow(2)))
+      val mProcellarum = exp(-5.5f * ((wx + 0.42f).pow(2) + (wy - 0.10f).pow(2)))
+      val mNubium = exp(-7.5f * ((wx + 0.02f).pow(2) + (wy - 0.36f).pow(2)))
+      val mCrisium = exp(-28.0f * ((sx - 0.12f).pow(2) + (sy + 0.58f).pow(2)))
+
+      val mariaWeight = (mImbrium * 0.85f + mSerenitatis * 0.80f + mTranquillitatis * 0.72f +
+        mProcellarum * 0.75f + mNubium * 0.68f + mCrisium * 0.92f).coerceIn(0f, 1f)
+
+      // Tycho Crater & radiating rays in lower-right (nx ~ 0.36, ny ~ 0.42)
+      val dxTycho = nx - 0.36f
+      val dyTycho = ny - 0.42f
+      val distTycho = sqrt(dxTycho * dxTycho + dyTycho * dyTycho)
+      val angleTycho = atan2(dyTycho, dxTycho)
+      val rayPattern = ((sin(angleTycho * 9f + detail * 2.5f) + 1f) * 0.5f).pow(3) *
+        exp(-2.6f * distTycho)
+      val tychoCore = exp(-48f * distTycho * distTycho)
+      val tychoGlow = (tychoCore * 0.95f + rayPattern * 0.55f).coerceIn(0f, 1f)
+
+      // Base lunar albedo (0 = deep sapphire mare, 1 = pure white highland/crater)
+      val baseAlbedo = ((1f - mariaWeight * 0.72f) * (0.52f + 0.48f * detail) + tychoGlow * 0.55f).coerceIn(0f, 1f)
+      // Fresnel icy-cyan limb brightening
+      val fresnel = (1f - nz).pow(2.1f)
+      val lum = (baseAlbedo * 0.85f + fresnel * 0.65f).coerceIn(0f, 1f)
+
+      val red = (28f + 227f * lum.pow(1.25f)).toInt().coerceIn(0, 255)
+      val green = (58f + 197f * lum.pow(1.05f)).toInt().coerceIn(0, 255)
+      val blue = (108f + 147f * lum.pow(0.82f)).toInt().coerceIn(0, 255)
+
+      pixels[rowOffset + px] = AndroidColor.argb(255, red, green, blue)
+    }
+  }
+
+  val bmp = Bitmap.createBitmap(pixels, sizePx, sizePx, Bitmap.Config.ARGB_8888)
+  return bmp.asImageBitmap()
+}
+
+/**
+ * Generates a 3D spherical lunar terminator shadow mask for the Moon Core.
  *
- * Uses true 3D sphere normal dot-product (`dot = nx * Lx + ny * Ly + nz * Lz`) so the living
- * White Core naturally exhibits all astronomical lunar phases/sizes:
- * - Waxing Crescent (هلال متزايد: cyclePhase ~ 0.03..0.22)
- * - First Quarter (التربيع الأول: cyclePhase ~ 0.25)
- * - Waxing Gibbous (أحدب متزايد: cyclePhase ~ 0.28..0.47)
- * - Full Moon (بدر كامل: cyclePhase ~ 0.47..0.53 -> 100% illuminated white core)
- * - Waning Gibbous (أحدب متناقص: cyclePhase ~ 0.53..0.72)
- * - Last Quarter (التربيع الأخير: cyclePhase ~ 0.75)
- * - Waning Crescent (هلال متناقص: cyclePhase ~ 0.78..0.97)
+ * Uses a translucent deep-sapphire earthshine on the unlit portion so that the astronomical
+ * lunar phase (Crescent, Quarter, Gibbous, Full Moon) is gracefully expressed while preserving
+ * the full visibility of the lunar maria, craters, and blazing electric-cyan rim.
  */
 private fun createSphericalLunarPhaseMask(sizePx: Int, cyclePhase: Float): ImageBitmap {
   val pixels = IntArray(sizePx * sizePx)
   val r = sizePx / 2f
   val phaseAngle = (cyclePhase.coerceIn(0f, 1f) * 2.0 * Math.PI).toFloat()
 
-  // Solar illumination vector relative to the Moon-Earth line:
-  // phase = 0.0 (New Moon)  -> Lz = -1 (lit from behind)
-  // phase = 0.25 (First Q)  -> Lx = +1, Lz = 0 (right hemisphere lit)
-  // phase = 0.50 (Full Moon)-> Lz = +1 (entire front hemisphere lit)
-  // phase = 0.75 (Last Q)   -> Lx = -1, Lz = 0 (left hemisphere lit)
   val lx = sin(phaseAngle)
-  val ly = -0.10f * sin(phaseAngle) // Subtle natural axial tilt of the lunar crescent
+  val ly = -0.10f * sin(phaseAngle)
   val lz = -cos(phaseAngle)
   val lLen = sqrt(lx * lx + ly * ly + lz * lz).coerceAtLeast(0.001f)
   val dirX = lx / lLen
@@ -978,15 +1299,16 @@ private fun createSphericalLunarPhaseMask(sizePx: Int, cyclePhase: Float): Image
       val nz = sqrt(max(0f, 1f - r2))
       val dot = nx * dirX + ny * dirY + nz * dirZ
 
-      // Soft penumbra transition across the lunar terminator line
-      val t = ((dot + 0.08f) / 0.18f).coerceIn(0f, 1f)
-      val litFactor = t * t * (3f - 2f * t)
-      // Unlit side retains subtle cosmic earthshine (alpha ~ 0.88) so the sphere silhouette remains noble
-      val shadowAlpha = ((1f - litFactor) * 0.88f * 255f).toInt().coerceIn(0, 255)
+      // Soft penumbra transition across the lunar terminator line;
+      // Keep the outer 4% rim bright so the electric cyan ring always wraps 360 degrees
+      val rimKeep = ((sqrt(r2) - 0.93f) / 0.07f).coerceIn(0f, 1f)
+      val t = ((dot + 0.12f) / 0.28f).coerceIn(0f, 1f)
+      val litFactor = max(t * t * (3f - 2f * t), rimKeep)
+      val shadowAlpha = ((1f - litFactor) * 0.34f * 255f).toInt().coerceIn(0, 255)
       if (shadowAlpha <= 1) {
         pixels[rowOffset + px] = 0
       } else {
-        pixels[rowOffset + px] = AndroidColor.argb(shadowAlpha, 4, 8, 20)
+        pixels[rowOffset + px] = AndroidColor.argb(shadowAlpha, 6, 18, 42)
       }
     }
   }

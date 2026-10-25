@@ -118,13 +118,6 @@ object OfflineWallpaperCatalog {
   val presets: List<OfflineWallpaperPreset> = listOf(
     // 0. VIBRANT 4K COLORFUL MASTERPIECES (خلفيات ملونة بدقة عالية 4K)
     OfflineWallpaperPreset(
-      id = "golden_moon_clouds",
-      titleAr = "قمر عملاق وغيوم ليلية ذهبية",
-      category = WallpaperCategory.COSMIC,
-      previewGradient = listOf(Color(0xFFFEF08A), Color(0xFFF59E0B), Color(0xFF1E293B), Color(0xFF030712)),
-      drawableResId = R.drawable.img_wallpaper_moon_clouds
-    ),
-    OfflineWallpaperPreset(
       id = "neon_fluid_4k",
       titleAr = "أمواج النيون السائلة 4K",
       category = WallpaperCategory.ABSTRACT,
