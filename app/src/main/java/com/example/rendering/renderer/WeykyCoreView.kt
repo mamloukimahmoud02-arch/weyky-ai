@@ -247,17 +247,25 @@ fun WeykyCoreView(
   val circlePath = remember { Path() }
   val liquidFillPath = remember { Path() }
   val dropletPath = remember { Path() }
+  val innerMusicWavePath = remember { Path() }
+  val innerMusicFillPath = remember { Path() }
+  val outerMusicWavePath = remember { Path() }
+  val outerMusicFillPath = remember { Path() }
 
   val density = LocalDensity.current
   val configuration = LocalConfiguration.current
   val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+  val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
   var canvasRootTopY by remember { mutableFloatStateOf(-1f) }
+  var canvasRootLeftX by remember { mutableFloatStateOf(-1f) }
 
   Box(
     modifier = modifier
       .size(sizeDp)
       .onGloballyPositioned { coordinates ->
-        canvasRootTopY = coordinates.positionInRoot().y
+        val pos = coordinates.positionInRoot()
+        canvasRootTopY = pos.y
+        canvasRootLeftX = pos.x
       }
       .clickable(
         interactionSource = remember { MutableInteractionSource() },
@@ -271,7 +279,9 @@ fun WeykyCoreView(
       val w = size.width
       val h = size.height
       val minDim = minOf(w, h)
-      val baseRadius = (minDim / 2f) * 0.86f
+      // Gently compact the inner sphere when music visualizer rings are active so the dual concentric waveform rings fit harmoniously
+      val musicCoreScale = 1.0f - 0.14f * musicPresence
+      val baseRadius = (minDim / 2f) * 0.86f * musicCoreScale
       val center = Offset(w / 2f, h / 2f)
 
       // Compute combined acoustic & musical excitation
@@ -482,56 +492,7 @@ fun WeykyCoreView(
         }
       }
 
-      // B. Music Reactive Equalizer Corona & Harmonic Halo (Active whenever music is playing)
-      if (musicPresence > 0.01f) {
-        val haloRadius = radius * (1.045f + 0.055f * musicBeatEnergy * musicPresence)
-        val haloAlpha = (0.38f + 0.35f * musicBeatEnergy) * musicPresence
-
-        drawCircle(
-          brush = Brush.sweepGradient(
-            colors = listOf(
-              liveMusicHighlight.copy(alpha = haloAlpha),
-              liveMusicSecondary.copy(alpha = haloAlpha * 0.75f),
-              animatedAccent.copy(alpha = haloAlpha * 0.9f),
-              liveMusicSecondary.copy(alpha = haloAlpha * 0.75f),
-              liveMusicHighlight.copy(alpha = haloAlpha)
-            ),
-            center = center
-          ),
-          radius = haloRadius,
-          center = center,
-          style = Stroke(width = (2.5f + 3.5f * musicBeatEnergy) * musicPresence)
-        )
-
-        // Symmetrical radial acoustic equalizer bars around the sphere perimeter
-        if (!isPowerSaving) {
-          val barCount = 36
-          for (i in 0 until barCount) {
-            val angle = (i.toFloat() / barCount) * (2f * Math.PI.toFloat()) + driftPhase * 0.35f
-            val bandHarmonic = sin(angle * 4f + wavePhase * 2f) * 0.5f +
-              cos(angle * 3f - pulsePhase * 2f) * 0.5f
-            val barNormalized = ((bandHarmonic + 1f) * 0.5f * (0.45f + 0.55f * musicBeatEnergy)).coerceIn(0.08f, 1f)
-            val barLength = radius * (0.025f + 0.095f * barNormalized) * musicPresence
-
-            val innerR = radius * 1.02f
-            val outerR = innerR + barLength
-            val cosA = cos(angle)
-            val sinA = sin(angle)
-
-            val startPt = Offset(center.x + cosA * innerR, center.y + sinA * innerR)
-            val endPt = Offset(center.x + cosA * outerR, center.y + sinA * outerR)
-
-            val barColor = if (i % 2 == 0) liveMusicHighlight else liveMusicSecondary
-            drawLine(
-              color = barColor.copy(alpha = (0.35f + 0.55f * barNormalized) * musicPresence),
-              start = startPt,
-              end = endPt,
-              strokeWidth = 2.6f,
-              cap = StrokeCap.Round
-            )
-          }
-        }
-      }
+      // B. Music Reactive Dual-Ring Waveform & Bilateral Equalizer Wings are rendered around the core rim below (after internal sphere aperture)
 
       // C. Voice Listening & Speaking Concentric Sonic Ripples
       val vocalActivity = maxOf(listeningPresence, speakingPresence)
@@ -975,7 +936,7 @@ fun WeykyCoreView(
       }
 
       // =========================================================================
-      // CRISP PRECISION OUTER BOUNDARY RINGS
+      // CRISP PRECISION OUTER BOUNDARY RINGS & MUSIC AUDIO VISUALIZER
       // =========================================================================
       if (isIdleNightMoon) {
         // Outer Electric Cyan-Blue Neon Bloom Ring
@@ -1005,8 +966,8 @@ fun WeykyCoreView(
         drawCircle(
           brush = Brush.radialGradient(
             colors = listOf(
-              animatedAccent.copy(alpha = 0.55f * visualState.glowIntensity),
-              animatedPrimary.copy(alpha = 0.25f),
+              animatedAccent.copy(alpha = 0.55f * visualState.glowIntensity * (1f - 0.5f * musicPresence)),
+              animatedPrimary.copy(alpha = 0.25f * (1f - 0.5f * musicPresence)),
               Color.Transparent
             ),
             center = center,
@@ -1022,6 +983,398 @@ fun WeykyCoreView(
           center = center,
           style = Stroke(width = 1.1f)
         )
+      }
+
+      // =========================================================================
+      // REFERENCE MUSIC VISUALIZER AROUND THE CORE (Dual Concentric Neon Wave Rings
+      // + Bilateral Horizontal Cyan/Purple Equalizer Wings matching _____4bdb58a4.jpg)
+      // =========================================================================
+      if (musicPresence > 0.01f) {
+        val innerRingR = radius * 1.012f
+        val outerRingR = radius * 1.138f
+        val twoPi = (2.0 * Math.PI).toFloat()
+
+        // 0. Annular dark contrast band between inner magenta ring and outer cyan ring
+        // so both concentric neon rings stand out with razor-sharp separation
+        val gapMidR = (innerRingR + outerRingR) * 0.5f
+        val gapWidth = (outerRingR - innerRingR)
+        drawCircle(
+          color = Color(0xAA040612).copy(alpha = 0.68f * musicPresence),
+          radius = gapMidR,
+          center = center,
+          style = Stroke(width = gapWidth)
+        )
+
+        // 1. INNER CONCENTRIC WAVE RING (Neon Magenta / Hot Pink #FF007F + Electric Violet #7C4DFF)
+        val innerSteps = if (isPowerSaving) 72 else 144
+        innerMusicWavePath.reset()
+        innerMusicFillPath.reset()
+
+        for (i in 0..innerSteps) {
+          val angle = (i.toFloat() / innerSteps) * twoPi
+          val cosA = cos(angle)
+          val sinA = sin(angle)
+
+          // Smooth multi-harmonic angular oscillation around the inner ring
+          val h1 = sin(angle * 7f - wavePhase * 1.6f) * 0.44f +
+            cos(angle * 13f + pulsePhase * 2.3f) * 0.34f +
+            sin(angle * 21f - wavePhase * 2.9f) * 0.22f
+          // Prominent diagonal & vertical harmonic lobes matching reference artwork
+          val diagA = sin(angle - 0.68f).pow(2)
+          val diagB = cos(angle + 0.52f).pow(2)
+          val innerLobe = 0.32f + 0.68f * max(diagA, diagB * 0.80f)
+          val innerWaveNorm = ((h1 + 1f) * 0.5f).pow(1.45f) * innerLobe * (0.50f + 0.50f * musicBeatEnergy)
+          val innerDisp = radius * (0.008f + 0.056f * innerWaveNorm) * musicPresence
+          val rPt = innerRingR + innerDisp
+
+          val px = center.x + cosA * rPt
+          val py = center.y + sinA * rPt
+          if (i == 0) {
+            innerMusicWavePath.moveTo(px, py)
+            innerMusicFillPath.moveTo(px, py)
+          } else {
+            innerMusicWavePath.lineTo(px, py)
+            innerMusicFillPath.lineTo(px, py)
+          }
+        }
+        innerMusicWavePath.close()
+
+        // Trace back along innerRingR to form a closed annular fill path
+        for (i in innerSteps downTo 0) {
+          val angle = (i.toFloat() / innerSteps) * twoPi
+          val bx = center.x + cos(angle) * innerRingR
+          val by = center.y + sin(angle) * innerRingR
+          innerMusicFillPath.lineTo(bx, by)
+        }
+        innerMusicFillPath.close()
+
+        // Fill inner wave peaks with Neon Violet-Magenta glow
+        drawPath(
+          path = innerMusicFillPath,
+          color = Color(0xFFD500F9).copy(alpha = 0.38f * musicPresence),
+          blendMode = BlendMode.Plus
+        )
+        // Outer soft Electric Violet bloom along inner wave contour
+        drawPath(
+          path = innerMusicWavePath,
+          color = Color(0xFF7C4DFF).copy(alpha = 0.62f * musicPresence),
+          style = Stroke(width = 5.4f),
+          blendMode = BlendMode.Plus
+        )
+        // Mid Neon Magenta-Pink wave contour
+        drawPath(
+          path = innerMusicWavePath,
+          color = Color(0xFFFF007F).copy(alpha = 0.92f * musicPresence),
+          style = Stroke(width = 2.4f),
+          blendMode = BlendMode.Plus
+        )
+        // Crisp Hot-Pink / White base circle of the inner ring
+        drawCircle(
+          color = Color(0xFFFF4081).copy(alpha = 0.95f * musicPresence),
+          radius = innerRingR,
+          center = center,
+          style = Stroke(width = 1.9f),
+          blendMode = BlendMode.Plus
+        )
+        drawCircle(
+          color = Color(0xFFFFB2DD).copy(alpha = 0.78f * musicPresence),
+          radius = innerRingR,
+          center = center,
+          style = Stroke(width = 0.9f)
+        )
+
+        // 2. OUTER CONCENTRIC WAVE RING (Warm Orange-Pink/White Base Rim + Fluid Electric Cyan Waveform Peaks)
+        val outerSteps = if (isPowerSaving) 96 else 180
+        outerMusicWavePath.reset()
+        outerMusicFillPath.reset()
+
+        for (i in 0..outerSteps) {
+          val angle = (i.toFloat() / outerSteps) * twoPi
+          val cosA = cos(angle)
+          val sinA = sin(angle)
+
+          // Taper smoothly right at the horizontal left/right equators (angle = 0 and angle = PI)
+          // where the horizontal equalizer wings attach
+          val sinA2 = sinA * sinA
+          val equatorTaper = (1f - exp(-14f * sinA2)).coerceIn(0.06f, 1f)
+
+          // Directional frequency burst envelopes matching the reference image:
+          // Strong multi-peak bursts on Upper-Left (~2.45 rad / 140 deg) and Lower-Right (~5.59 rad / 320 deg),
+          // plus secondary harmonic bursts on Upper-Right (~0.75 rad / 43 deg) and Lower-Left (~3.89 rad / 223 deg)
+          val dTopLeft = atan2(sin(angle - 2.42f), cos(angle - 2.42f))
+          val dBotRight = atan2(sin(angle - 5.56f), cos(angle - 5.56f))
+          val dTopRight = atan2(sin(angle - 0.78f), cos(angle - 0.78f))
+          val dBotLeft = atan2(sin(angle - 3.92f), cos(angle - 3.92f))
+
+          val burstPrimary = exp(-(dTopLeft / 0.52f).pow(2)) + exp(-(dBotRight / 0.52f).pow(2))
+          val burstSecondary = (exp(-(dTopRight / 0.46f).pow(2)) + exp(-(dBotLeft / 0.46f).pow(2))) * 0.62f
+          val angularBurstEnv = (0.18f + 0.82f * (burstPrimary + burstSecondary).coerceIn(0f, 1.15f)) * equatorTaper
+
+          // High-definition circular FFT spline oscillation (creates crisp fluid audio peaks)
+          val w1 = (sin(angle * 10f + wavePhase * 2.1f) + 1f) * 0.5f
+          val w2 = (cos(angle * 18f - pulsePhase * 2.8f) + 1f) * 0.5f
+          val w3 = (sin(angle * 28f + wavePhase * 3.7f) + 1f) * 0.5f
+          val combinedWave = (w1 * 0.42f + w2 * 0.35f + w3 * 0.23f).pow(1.65f)
+
+          val beatDrive = 0.52f + 0.48f * musicBeatEnergy + 0.25f * micLiveEnergy * listeningPresence
+          val outerDisp = radius * (0.008f + 0.245f * combinedWave * angularBurstEnv * beatDrive) * musicPresence
+          val rOut = outerRingR + outerDisp
+
+          val px = center.x + cosA * rOut
+          val py = center.y + sinA * rOut
+          if (i == 0) {
+            outerMusicWavePath.moveTo(px, py)
+            outerMusicFillPath.moveTo(px, py)
+          } else {
+            outerMusicWavePath.lineTo(px, py)
+            outerMusicFillPath.lineTo(px, py)
+          }
+        }
+        outerMusicWavePath.close()
+
+        // Close outer fill path along the base circle outerRingR
+        for (i in outerSteps downTo 0) {
+          val angle = (i.toFloat() / outerSteps) * twoPi
+          val bx = center.x + cos(angle) * outerRingR
+          val by = center.y + sin(angle) * outerRingR
+          outerMusicFillPath.lineTo(bx, by)
+        }
+        outerMusicFillPath.close()
+
+        // Fill between outerRingR and the deformed cyan waveform peaks
+        drawPath(
+          path = outerMusicFillPath,
+          brush = Brush.radialGradient(
+            colorStops = arrayOf(
+              0.0f to Color(0xFF00F0FF).copy(alpha = 0.15f * musicPresence),
+              0.72f to Color(0xFF00F0FF).copy(alpha = 0.48f * musicPresence),
+              0.90f to Color(0xFF00E5FF).copy(alpha = 0.34f * musicPresence),
+              1.0f to Color(0xFF18FFFF).copy(alpha = 0.18f * musicPresence)
+            ),
+            center = center,
+            radius = outerRingR + radius * 0.26f
+          ),
+          blendMode = BlendMode.Plus
+        )
+
+        // Wide Electric Cyan outer neon bloom along the waveform contour
+        drawPath(
+          path = outerMusicWavePath,
+          color = Color(0xFF00E5FF).copy(alpha = 0.42f * musicPresence),
+          style = Stroke(width = 7.8f),
+          blendMode = BlendMode.Plus
+        )
+        // Bright Electric Cyan primary waveform line
+        drawPath(
+          path = outerMusicWavePath,
+          color = Color(0xFF00F5FF).copy(alpha = 0.94f * musicPresence),
+          style = Stroke(width = 3.0f),
+          blendMode = BlendMode.Plus
+        )
+        // Razor-sharp Ice-White/Cyan waveform crest highlight
+        drawPath(
+          path = outerMusicWavePath,
+          color = Color(0xFFE0FFFF).copy(alpha = 0.92f * musicPresence),
+          style = Stroke(width = 1.25f)
+        )
+
+        // Warm Peach-Pink / Orange-Gold / White inner base rim of the outer circle (matching reference image)
+        drawCircle(
+          color = Color(0xFFFF6EC7).copy(alpha = 0.56f * musicPresence),
+          radius = outerRingR,
+          center = center,
+          style = Stroke(width = 3.8f),
+          blendMode = BlendMode.Plus
+        )
+        drawCircle(
+          brush = Brush.sweepGradient(
+            colors = listOf(
+              Color(0xFFFFAB40).copy(alpha = 0.95f * musicPresence),
+              Color(0xFFFF80AB).copy(alpha = 0.95f * musicPresence),
+              Color(0xFFFFFFFF).copy(alpha = 0.98f * musicPresence),
+              Color(0xFFFFAB40).copy(alpha = 0.95f * musicPresence),
+              Color(0xFFFF4081).copy(alpha = 0.95f * musicPresence),
+              Color(0xFFFFFFFF).copy(alpha = 0.98f * musicPresence),
+              Color(0xFFFFAB40).copy(alpha = 0.95f * musicPresence)
+            ),
+            center = center
+          ),
+          radius = outerRingR,
+          center = center,
+          style = Stroke(width = 1.7f)
+        )
+
+        // 3. BILATERAL HORIZONTAL EQUALIZER WINGS (Left & Right of the Outer Ring)
+        // Upper Half: Sharp vertical bars pointing UP in Electric Cyan (#00F0FF / #84FFFF)
+        // Lower Half: Mirrored reflection bars pointing DOWN in Neon Purple/Magenta (#E040FB / #7C4DFF / #651FFF)
+        val wingStartR = outerRingR + radius * 0.024f
+        val availableHalfWidth = if (canvasRootLeftX >= 0f && screenWidthPx > 0f) {
+          val rootCenterX = canvasRootLeftX + center.x
+          minOf(rootCenterX, screenWidthPx - rootCenterX) - 10f
+        } else {
+          wingStartR + radius * 1.05f
+        }
+        val wingSpan = minOf(
+          radius * 1.06f,
+          (availableHalfWidth - wingStartR).coerceAtLeast(radius * 0.62f)
+        )
+
+        val wingBarCount = if (isPowerSaving) 24 else 40
+        val stepX = wingSpan / wingBarCount.toFloat()
+        val barWidth = (stepX * 0.46f).coerceIn(1.8f, 3.6f)
+        val gapHalf = maxOf(1.8f, radius * 0.020f)
+        val maxWingBarHeight = radius * 0.64f
+
+        for (side in -1..1 step 2) {
+          val dir = side.toFloat()
+          val sidePhaseShift = if (side < 0) 0.0f else 0.85f
+
+          // Subtle ambient cyan/purple atmospheric glow behind the active wing clusters
+          val midClusterX = center.x + dir * (wingStartR + wingSpan * 0.46f)
+          val outerClusterX = center.x + dir * (wingStartR + wingSpan * 0.88f)
+          val glowRadius = radius * 0.34f
+          drawCircle(
+            brush = Brush.radialGradient(
+              colors = listOf(
+                Color(0xFF00E5FF).copy(alpha = 0.16f * musicPresence),
+                Color.Transparent
+              ),
+              center = Offset(outerClusterX, center.y - glowRadius * 0.45f),
+              radius = glowRadius
+            ),
+            radius = glowRadius,
+            center = Offset(outerClusterX, center.y - glowRadius * 0.45f),
+            blendMode = BlendMode.Plus
+          )
+          drawCircle(
+            brush = Brush.radialGradient(
+              colors = listOf(
+                Color(0xFFAA00FF).copy(alpha = 0.15f * musicPresence),
+                Color.Transparent
+              ),
+              center = Offset(outerClusterX, center.y + glowRadius * 0.45f),
+              radius = glowRadius
+            ),
+            radius = glowRadius,
+            center = Offset(outerClusterX, center.y + glowRadius * 0.45f),
+            blendMode = BlendMode.Plus
+          )
+          drawCircle(
+            brush = Brush.radialGradient(
+              colors = listOf(
+                Color(0xFF00E5FF).copy(alpha = 0.11f * musicPresence),
+                Color(0xFFAA00FF).copy(alpha = 0.10f * musicPresence),
+                Color.Transparent
+              ),
+              center = Offset(midClusterX, center.y),
+              radius = glowRadius * 0.8f
+            ),
+            radius = glowRadius * 0.8f,
+            center = Offset(midClusterX, center.y),
+            blendMode = BlendMode.Plus
+          )
+
+          for (b in 0 until wingBarCount) {
+            val t = b.toFloat() / (wingBarCount - 1).coerceAtLeast(1)
+            val barX = center.x + dir * (wingStartR + b * stepX)
+
+            // Signature 3-Cluster + Baseline Ticks Silhouette matching _____4bdb58a4.jpg:
+            // Cluster 1: Inner junction right against the outer ring (t ~ 0.00..0.19)
+            val c1 = exp(-((t - 0.055f) / 0.045f).pow(2)) * 0.54f +
+              exp(-((t - 0.135f) / 0.040f).pow(2)) * 0.38f
+            // Small isolated harmonic blip in Gap 1 (t ~ 0.26)
+            val blip1 = exp(-((t - 0.265f) / 0.022f).pow(2)) * 0.17f
+            // Cluster 2: Mid-wing harmonic cluster (t ~ 0.35..0.56)
+            val c2 = exp(-((t - 0.395f) / 0.038f).pow(2)) * 0.35f +
+              exp(-((t - 0.468f) / 0.044f).pow(2)) * 0.52f +
+              exp(-((t - 0.538f) / 0.034f).pow(2)) * 0.30f
+            // Cluster 3: Tall dramatic outer wing spikes (t ~ 0.79..0.98)
+            val c3 = exp(-((t - 0.825f) / 0.036f).pow(2)) * 0.64f +
+              exp(-((t - 0.888f) / 0.042f).pow(2)) * 0.98f +
+              exp(-((t - 0.955f) / 0.032f).pow(2)) * 0.42f
+
+            val envelope = maxOf(c1, blip1, c2, c3)
+
+            // Live multi-frequency spectrum excitation per bar
+            val osc1 = (sin(wavePhase * 2.5f + b * 0.95f + sidePhaseShift) + 1f) * 0.5f
+            val osc2 = (cos(pulsePhase * 3.2f - b * 0.62f + sidePhaseShift) + 1f) * 0.5f
+            val osc3 = (sin(wavePhase * 4.1f + b * 1.45f) + 1f) * 0.5f
+            val liveSpectrum = (osc1 * 0.45f + osc2 * 0.35f + osc3 * 0.20f)
+            val dynamicEnergy = (0.38f + 0.62f * liveSpectrum) * (0.55f + 0.45f * musicBeatEnergy)
+
+            val isBaselineTick = envelope < 0.065f
+            val upHeight = if (isBaselineTick) {
+              // Small glowing baseline cyan dot/tick between the taller clusters
+              (barWidth * (0.85f + 0.65f * osc1)) * musicPresence
+            } else {
+              (maxWingBarHeight * envelope * dynamicEnergy)
+                .coerceAtLeast(barWidth * 1.4f) * musicPresence
+            }
+            val downHeight = upHeight * 0.86f
+
+            val topStart = Offset(barX, center.y - gapHalf)
+            val topEnd = Offset(barX, center.y - gapHalf - upHeight)
+            val botStart = Offset(barX, center.y + gapHalf)
+            val botEnd = Offset(barX, center.y + gapHalf + downHeight)
+
+            if (!isBaselineTick && !isPowerSaving) {
+              // Upper Cyan Bar Neon Glow
+              drawLine(
+                color = Color(0xFF00E5FF).copy(alpha = 0.28f * musicPresence),
+                start = topStart,
+                end = topEnd,
+                strokeWidth = barWidth * 2.5f,
+                cap = StrokeCap.Round,
+                blendMode = BlendMode.Plus
+              )
+              // Lower Purple Reflection Bar Neon Glow
+              drawLine(
+                color = Color(0xFFAA00FF).copy(alpha = 0.25f * musicPresence),
+                start = botStart,
+                end = botEnd,
+                strokeWidth = barWidth * 2.5f,
+                cap = StrokeCap.Round,
+                blendMode = BlendMode.Plus
+              )
+            }
+
+            // Upper Bar: Bright Electric Cyan (#00F0FF -> #AAFFFF) pointing UP
+            val cyanAlpha = (if (isBaselineTick) 0.72f else 0.96f) * musicPresence
+            drawLine(
+              brush = Brush.verticalGradient(
+                colors = listOf(
+                  Color(0xFFCCFFFF).copy(alpha = cyanAlpha),
+                  Color(0xFF00F0FF).copy(alpha = cyanAlpha),
+                  Color(0xFF00B8D4).copy(alpha = cyanAlpha * 0.90f)
+                ),
+                startY = topEnd.y,
+                endY = topStart.y + 1f
+              ),
+              start = topStart,
+              end = topEnd,
+              strokeWidth = barWidth,
+              cap = StrokeCap.Round
+            )
+
+            // Lower Bar: Mirrored Neon Purple / Magenta Reflection (#E040FB -> #9C27B0 -> #651FFF) pointing DOWN
+            val purpleAlpha = (if (isBaselineTick) 0.62f else 0.90f) * musicPresence
+            drawLine(
+              brush = Brush.verticalGradient(
+                colors = listOf(
+                  Color(0xFFE040FB).copy(alpha = purpleAlpha),
+                  Color(0xFFAA00FF).copy(alpha = purpleAlpha * 0.85f),
+                  Color(0xFF651FFF).copy(alpha = purpleAlpha * 0.42f)
+                ),
+                startY = botStart.y,
+                endY = botEnd.y + 1f
+              ),
+              start = botStart,
+              end = botEnd,
+              strokeWidth = barWidth,
+              cap = StrokeCap.Round
+            )
+          }
+        }
       }
     }
   }

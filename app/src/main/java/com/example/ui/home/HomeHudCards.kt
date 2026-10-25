@@ -2053,7 +2053,7 @@ fun HomeCoreSection(
           isPowerSaving = uiState.isPowerSaving,
           isVoiceListening = uiState.isVoiceListening,
           isSpeakingAloud = uiState.isSpeakingAloud,
-          isMusicPlaying = uiState.isMusicPlaying,
+          isMusicPlaying = uiState.isMusicPlaying || (uiState.activeMediaMetadata?.isPlaying == true),
           isCharging = isDeviceCharging,
           batteryPercentage = currentBatteryPct,
           voiceEnergyLevel = uiState.voiceEnergyLevel,
