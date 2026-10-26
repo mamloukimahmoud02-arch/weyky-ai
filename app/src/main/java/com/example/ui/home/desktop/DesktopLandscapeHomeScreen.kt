@@ -548,7 +548,7 @@ private fun DesktopCompactMusicWidget(
 
 /**
  * Compact Top Information Pills:
- * [ 📍 موقعي الحالي ]  [ ☀️ 14° غائم ]  [ الجمعة، 23 أكتوبر 📅 ]
+ * [ 📍 موقعي الحالي ]  [ ☀️ 14° غائم ]
  * Fully interactive: Clicking any pill speaks its details through the WEYKY Core!
  * Reacts to all 3 themes (Tactical HUD, Modern, Minimal).
  */
@@ -595,8 +595,6 @@ private fun DesktopCompactInfoPills(
   val locationText = weather?.locationName
     ?.takeIf { it.isNotBlank() && it != "موقعي الحالي" }
     ?: "جاري تحديد المنطقة..."
-  val dateText = uiState.currentDateString.ifBlank { "الجمعة، 23 أكتوبر" }
-  val engDateText = uiState.currentEnglishDateString.ifBlank { "FRIDAY, 23 OCTOBER 2026" }
 
   Row(
     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -673,53 +671,6 @@ private fun DesktopCompactInfoPills(
         fontSize = 11.sp,
         fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
       )
-    }
-
-    // 3. Date Pill: [ الجمعة، 23 أكتوبر 📅 ] -> Clickable: speaks date
-    Row(
-      modifier = Modifier
-        .height(36.dp)
-        .clip(pillShape)
-        .background(pillBg)
-        .border(
-          width = if (isTactical) 1.2.dp else 1.dp,
-          color = pillBorder,
-          shape = pillShape
-        )
-        .clickable(onClick = onDateClick)
-        .padding(horizontal = 10.dp, vertical = 2.dp)
-        .testTag("desktop_date_pill"),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-      Icon(
-        imageVector = Icons.Default.CalendarToday,
-        contentDescription = "التاريخ",
-        tint = Color(0xFF00F0FF),
-        modifier = Modifier.size(14.dp)
-      )
-
-      Column(
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Center
-      ) {
-        Text(
-          text = dateText,
-          color = textPrimary,
-          fontSize = 10.sp,
-          fontWeight = FontWeight.Bold,
-          maxLines = 1,
-          fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
-        )
-        Text(
-          text = engDateText.uppercase(),
-          color = textSecondary.copy(alpha = 0.8f),
-          fontSize = 7.5.sp,
-          fontWeight = FontWeight.Normal,
-          maxLines = 1,
-          fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
-        )
-      }
     }
   }
 }

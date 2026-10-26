@@ -302,23 +302,31 @@ private fun DesktopSystemPill(
       )
     }
 
-    // 2. Live Clock (Interactive -> speaks time)
-    val timeText = uiState.currentTimeString.ifBlank { "07:43" }
-    Box(
-      modifier = Modifier
-        .clip(RoundedCornerShape(4.dp))
-        .clickable(onClick = onTimeClick)
-        .padding(horizontal = 2.dp, vertical = 2.dp)
-        .testTag("desktop_clock_button"),
-      contentAlignment = Alignment.Center
-    ) {
-      Text(
-        text = timeText,
-        color = textPrimary,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
-      )
+    // 2. Merged Date & Live Clock next to Battery (e.g. "26 oct 17:17")
+    val shortDateText = remember(uiState.currentEnglishDateString) {
+      formatShortLandscapeDate(uiState.currentEnglishDateString)
+    }
+    val timeText = uiState.currentTimeString.ifBlank { "17:17" }
+    val mergedDateTimeText = "$shortDateText $timeText"
+
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+      Box(
+        modifier = Modifier
+          .clip(RoundedCornerShape(4.dp))
+          .clickable(onClick = onTimeClick)
+          .padding(horizontal = 4.dp, vertical = 2.dp)
+          .testTag("desktop_clock_button"),
+        contentAlignment = Alignment.Center
+      ) {
+        Text(
+          text = mergedDateTimeText,
+          color = textPrimary,
+          fontSize = 12.sp,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
+        )
+      }
     }
 
     // 3. Battery Percentage & Icon (Interactive -> speaks battery state)
@@ -351,6 +359,23 @@ private fun DesktopSystemPill(
       )
     }
   }
+}
+
+private fun formatShortLandscapeDate(englishDateString: String): String {
+  if (englishDateString.isNotBlank()) {
+    val afterComma = englishDateString.substringAfter(",", englishDateString).trim()
+    val tokens = afterComma.split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (tokens.size >= 2) {
+      val day = tokens[0]
+      val month = tokens[1].take(3).lowercase(java.util.Locale.US)
+      if (day.any { it.isDigit() }) {
+        return "$day $month"
+      }
+    }
+  }
+  return java.text.SimpleDateFormat("d MMM", java.util.Locale.US)
+    .format(java.util.Date())
+    .lowercase(java.util.Locale.US)
 }
 
 /**

@@ -507,7 +507,8 @@ class WeykyViewModel(application: Application) : AndroidViewModel(application) {
 
   fun announceTime() {
     val time = _uiState.value.currentTimeString.ifBlank { "غير محدد" }
-    val text = "الوقت الآن هو $time."
+    val date = _uiState.value.currentDateString.ifBlank { "اليوم" }
+    val text = "الوقت الآن هو $time، والتاريخ $date."
     announceInfo(text)
   }
 
