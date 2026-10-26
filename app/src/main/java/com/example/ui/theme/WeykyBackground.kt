@@ -55,6 +55,8 @@ fun Modifier.weykyScreenBackground(
     }
 
     WeykyThemeMode.MODERN -> {
+      val bgPreset = ModernBackgroundCatalog.findById(uiState.modernBgPresetId)
+
       // Determine base state color for Modern dynamic lighting
       val isCharging = uiState.batterySnapshot?.chargingState == ChargingState.CHARGING ||
         uiState.batterySnapshot?.chargingState == ChargingState.FULL
@@ -63,8 +65,8 @@ fun Modifier.weykyScreenBackground(
         isCharging -> Color(0xFF00F59B) // Charging (Hyper Cyber Green)
         uiState.isVoiceListening -> Color(0xFFF43F5E) // Listening (Vivid Neon Rose/Magenta)
         uiState.isSpeakingAloud || uiState.visualState == CoreVisualState.RESPONDING -> Color(0xFFFFB800) // Speaking (Saturated Solar Gold)
-        uiState.isMusicPlaying || uiState.visualState == CoreVisualState.MUSIC -> Color(0xFF00F0FF) // Music (Electric Aqua Cyan)
-        else -> Color(0xFF00D8FF) // Idle (Saturated Electric Cyan-Blue)
+        uiState.isMusicPlaying || uiState.visualState == CoreVisualState.MUSIC -> bgPreset.leftNebulaColors.first() // Music
+        else -> bgPreset.leftNebulaColors.first() // Idle
       }
 
       val animatedGlowColor by animateColorAsState(
@@ -73,12 +75,12 @@ fun Modifier.weykyScreenBackground(
         label = "modern_glow_color"
       )
 
-      val modernBgColor = if (isLight) Color(0xFFE0ECFF) else Color(0xFF04081C)
+      val modernBgColor = if (isLight) bgPreset.lightBaseColors.first() else bgPreset.darkBaseColors.first()
 
       val glowAlpha = when {
         isPowerSaving -> 0.34f
         isLight -> 0.46f
-        else -> 0.76f
+        else -> 0.78f
       }
 
       return this
@@ -92,33 +94,22 @@ fun Modifier.weykyScreenBackground(
           // 1. Rich saturated cosmic gradient base (works in both Portrait & Landscape)
           drawRect(
             brush = Brush.linearGradient(
-              colors = if (isLight) {
-                listOf(
-                  Color(0xFFDbeafe),
-                  Color(0xFFE0E7FF),
-                  Color(0xFFF3E8FF),
-                  Color(0xFFDBEAFE)
-                )
-              } else {
-                listOf(
-                  Color(0xFF040B29),
-                  Color(0xFF0A1944),
-                  Color(0xFF1B0C42),
-                  Color(0xFF060B24)
-                )
-              },
+              colors = if (isLight) bgPreset.lightBaseColors else bgPreset.darkBaseColors,
               start = Offset(0f, 0f),
               end = Offset(w, h)
             )
           )
 
-          // 2. Saturated Electric Cyan & Azure nebula on the left / top-left
+          // 2. Left / top-left nebula from preset
+          val leftC0 = bgPreset.leftNebulaColors.getOrElse(0) { Color(0xFF00E5FF) }
+          val leftC1 = bgPreset.leftNebulaColors.getOrElse(1) { Color(0xFF0066FF) }
+          val leftC2 = bgPreset.leftNebulaColors.getOrElse(2) { Color(0xFF1D4ED8) }
           drawCircle(
             brush = Brush.radialGradient(
               colors = listOf(
-                Color(0xFF00E5FF).copy(alpha = glowAlpha * 0.95f),
-                Color(0xFF0066FF).copy(alpha = glowAlpha * 0.62f),
-                Color(0xFF1D4ED8).copy(alpha = glowAlpha * 0.25f),
+                leftC0.copy(alpha = glowAlpha * 0.95f),
+                leftC1.copy(alpha = glowAlpha * 0.62f),
+                leftC2.copy(alpha = glowAlpha * 0.25f),
                 Color.Transparent
               ),
               center = Offset(w * 0.14f, h * 0.36f),
@@ -128,13 +119,16 @@ fun Modifier.weykyScreenBackground(
             radius = maxDim * 0.72f
           )
 
-          // 3. Saturated Royal Violet & Neon Magenta nebula on the right / bottom-right
+          // 3. Right / bottom-right nebula from preset
+          val rightC0 = bgPreset.rightNebulaColors.getOrElse(0) { Color(0xFFD946EF) }
+          val rightC1 = bgPreset.rightNebulaColors.getOrElse(1) { Color(0xFF8B5CF6) }
+          val rightC2 = bgPreset.rightNebulaColors.getOrElse(2) { Color(0xFF4F46E5) }
           drawCircle(
             brush = Brush.radialGradient(
               colors = listOf(
-                Color(0xFFD946EF).copy(alpha = glowAlpha * 0.90f),
-                Color(0xFF8B5CF6).copy(alpha = glowAlpha * 0.65f),
-                Color(0xFF4F46E5).copy(alpha = glowAlpha * 0.28f),
+                rightC0.copy(alpha = glowAlpha * 0.90f),
+                rightC1.copy(alpha = glowAlpha * 0.65f),
+                rightC2.copy(alpha = glowAlpha * 0.28f),
                 Color.Transparent
               ),
               center = Offset(w * 0.86f, h * 0.56f),
@@ -144,12 +138,14 @@ fun Modifier.weykyScreenBackground(
             radius = maxDim * 0.76f
           )
 
-          // 4. Deep Indigo-Magenta atmospheric bloom across top-right / bottom-left diagonal
+          // 4. Diagonal atmospheric bloom from preset
+          val diagC0 = bgPreset.diagonalBloomColors.getOrElse(0) { Color(0xFF6366F1) }
+          val diagC1 = bgPreset.diagonalBloomColors.getOrElse(1) { Color(0xFFEC4899) }
           drawCircle(
             brush = Brush.radialGradient(
               colors = listOf(
-                Color(0xFF6366F1).copy(alpha = glowAlpha * 0.55f),
-                Color(0xFFEC4899).copy(alpha = glowAlpha * 0.24f),
+                diagC0.copy(alpha = glowAlpha * 0.55f),
+                diagC1.copy(alpha = glowAlpha * 0.24f),
                 Color.Transparent
               ),
               center = Offset(w * 0.52f, h * 0.18f),
@@ -410,11 +406,17 @@ fun WeykyAdaptiveCard(
       val shape = RoundedCornerShape(22.dp)
       val clickModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
       val glassBg = if (isLight) Color(0xEEFFFFFF) else Color(0x400C192E)
+      val secondaryBorder = Color(
+        red = (accentColor.red * 0.65f + 0.22f).coerceIn(0f, 1f),
+        green = (accentColor.green * 0.55f + 0.12f).coerceIn(0f, 1f),
+        blue = (accentColor.blue * 0.75f + 0.25f).coerceIn(0f, 1f),
+        alpha = 0.88f
+      )
       val gradientBorder = Brush.linearGradient(
         colors = listOf(
-          Color(0xFF00D2FF),
-          Color(0xFF6366F1),
-          Color(0xFFD946EF)
+          accentColor,
+          secondaryBorder,
+          accentColor.copy(alpha = 0.75f)
         )
       )
 
@@ -422,7 +424,7 @@ fun WeykyAdaptiveCard(
         modifier = modifier
           .clip(shape)
           .background(glassBg)
-          .border(width = 1.2.dp, brush = gradientBorder, shape = shape)
+          .border(width = 1.3.dp, brush = gradientBorder, shape = shape)
           .then(clickModifier),
         content = content
       )

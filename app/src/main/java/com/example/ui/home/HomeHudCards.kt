@@ -292,7 +292,7 @@ fun HomeWeatherCard(
         weather = weather,
         modifier = Modifier.size(iconBoxSize),
         shape = viewportShape,
-        borderColor = if (isModern) Color(0xFF00D2FF).copy(alpha = 0.65f) else borderColor.copy(alpha = 0.5f)
+        borderColor = if (isModern) borderColor.copy(alpha = 0.65f) else borderColor.copy(alpha = 0.5f)
       )
 
       Column(
@@ -331,7 +331,7 @@ fun HomeWeatherCard(
           Icon(
             imageVector = Icons.Default.Place,
             contentDescription = "Location",
-            tint = if (isMinimal || isModern) Color(0xFF00D2FF) else borderColor,
+            tint = if (isMinimal) Color(0xFF00D2FF) else borderColor,
             modifier = Modifier.size(if (isExpandedTablet) 14.dp else 11.dp)
           )
           Text(
@@ -383,12 +383,12 @@ fun HomeDateCard(
     WeykyThemeMode.MINIMAL -> RoundedCornerShape(if (isExpandedTablet) 14.dp else 12.dp)
   }
   val iconBg = when (uiState.themeMode) {
-    WeykyThemeMode.MODERN -> Color(0x2E00D2FF)
+    WeykyThemeMode.MODERN -> borderColor.copy(alpha = 0.18f)
     WeykyThemeMode.MINIMAL -> Color(0xFF152230)
     WeykyThemeMode.TACTICAL -> borderColor.copy(alpha = 0.14f)
   }
   val iconTint = when (uiState.themeMode) {
-    WeykyThemeMode.MODERN -> Color(0xFF00E5FF)
+    WeykyThemeMode.MODERN -> borderColor
     WeykyThemeMode.MINIMAL -> Color(0xFF7A8B9E)
     WeykyThemeMode.TACTICAL -> borderColor
   }
@@ -599,7 +599,7 @@ fun HomeBottomControlRow(
     listOf(Color(0x550F2C4C), Color(0x330B1B30))
   )
   val modernBorderBrush = Brush.linearGradient(
-    listOf(Color(0xFF00E5FF), Color(0xFF0088FF))
+    listOf(borderColor, borderColor.copy(alpha = 0.65f))
   )
   val minimalSlateBg = Color(0xFF101924)
   val minimalBorderColor = Color(0xFF1E2D3D)
@@ -616,7 +616,7 @@ fun HomeBottomControlRow(
       val appsModifier = when {
         isModern -> Modifier
           .size(barHeight)
-          .shadow(6.dp, flankShape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
+          .shadow(6.dp, flankShape, spotColor = borderColor.copy(alpha = 0.4f), ambientColor = borderColor.copy(alpha = 0.2f))
           .clip(flankShape)
           .background(modernGlassGradient)
           .border(1.5.dp, modernBorderBrush, flankShape)
@@ -638,7 +638,7 @@ fun HomeBottomControlRow(
           .testTag("app_drawer_button")
       }
       val appsIconTint = when {
-        isModern -> Color(0xFF00D2FF)
+        isModern -> borderColor
         isMinimal -> Color(0xFF6E8094)
         else -> borderColor
       }
@@ -660,7 +660,7 @@ fun HomeBottomControlRow(
         isModern -> Modifier
           .weight(1f)
           .height(barHeight)
-          .shadow(6.dp, pillShape, spotColor = Color(0x5500D2FF), ambientColor = Color(0x2200D2FF))
+          .shadow(6.dp, pillShape, spotColor = borderColor.copy(alpha = 0.35f), ambientColor = borderColor.copy(alpha = 0.15f))
           .clip(pillShape)
           .background(modernGlassGradient)
           .border(1.5.dp, modernBorderBrush, pillShape)
@@ -760,7 +760,7 @@ fun HomeBottomControlRow(
             Icon(
               imageVector = Icons.Default.Mic,
               contentDescription = "Voice Input",
-              tint = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else Color(0xFF00D2FF),
+              tint = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else if (isModern) borderColor else Color(0xFF00D2FF),
               modifier = Modifier.size(micIconSize)
             )
           }
@@ -771,7 +771,7 @@ fun HomeBottomControlRow(
       val settingsModifier = when {
         isModern -> Modifier
           .size(barHeight)
-          .shadow(6.dp, flankShape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
+          .shadow(6.dp, flankShape, spotColor = borderColor.copy(alpha = 0.4f), ambientColor = borderColor.copy(alpha = 0.2f))
           .clip(flankShape)
           .background(modernGlassGradient)
           .border(1.5.dp, modernBorderBrush, flankShape)
@@ -793,7 +793,7 @@ fun HomeBottomControlRow(
           .testTag("settings_button")
       }
       val settingsIconTint = when {
-        isModern -> Color(0xFF00D2FF)
+        isModern -> borderColor
         isMinimal -> Color(0xFF00D2FF)
         else -> borderColor
       }

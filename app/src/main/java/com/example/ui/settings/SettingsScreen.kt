@@ -85,8 +85,11 @@ fun SettingsScreen(
   onToggleFavoriteWallpaper: (String) -> Unit = {},
   onRestoreMinimalDefault: () -> Unit = {},
   onRestoreFullDefaults: () -> Unit = {},
+  onSelectModernBgPreset: (String) -> Unit = {},
   isNotificationAccessGranted: Boolean,
   onRequestDefaultLauncher: () -> Unit = {},
+  onToggleNotificationApp: (String) -> Unit = {},
+  onSetAllNotificationApps: (Boolean) -> Unit = {},
   onDownloadModel: (VoiceModelInfo) -> Unit = {},
   onInstallModel: (VoiceModelInfo) -> Unit = {},
   onInstallModelFromFile: (VoiceModelInfo, Uri) -> Unit = { _, _ -> },
@@ -172,8 +175,11 @@ fun SettingsScreen(
         onToggleFavoriteWallpaper = onToggleFavoriteWallpaper,
         onRestoreMinimalDefault = onRestoreMinimalDefault,
         onRestoreFullDefaults = onRestoreFullDefaults,
+        onSelectModernBgPreset = onSelectModernBgPreset,
         onTogglePowerSaving = onTogglePowerSaving,
         onRequestDefaultLauncher = onRequestDefaultLauncher,
+        onToggleNotificationApp = onToggleNotificationApp,
+        onSetAllNotificationApps = onSetAllNotificationApps,
         isNotificationAccessGranted = isNotificationAccessGranted,
         onDownloadModel = onDownloadModel,
         onInstallModel = onInstallModel,
@@ -212,8 +218,11 @@ fun SettingsScreen(
         onToggleFavoriteWallpaper = onToggleFavoriteWallpaper,
         onRestoreMinimalDefault = onRestoreMinimalDefault,
         onRestoreFullDefaults = onRestoreFullDefaults,
+        onSelectModernBgPreset = onSelectModernBgPreset,
         onTogglePowerSaving = onTogglePowerSaving,
         onRequestDefaultLauncher = onRequestDefaultLauncher,
+        onToggleNotificationApp = onToggleNotificationApp,
+        onSetAllNotificationApps = onSetAllNotificationApps,
         isNotificationAccessGranted = isNotificationAccessGranted,
         onDownloadModel = onDownloadModel,
         onInstallModel = onInstallModel,
@@ -258,8 +267,11 @@ private fun LandscapeDesktopSettingsLayout(
   onToggleFavoriteWallpaper: (String) -> Unit,
   onRestoreMinimalDefault: () -> Unit,
   onRestoreFullDefaults: () -> Unit,
+  onSelectModernBgPreset: (String) -> Unit,
   onTogglePowerSaving: () -> Unit,
   onRequestDefaultLauncher: () -> Unit,
+  onToggleNotificationApp: (String) -> Unit,
+  onSetAllNotificationApps: (Boolean) -> Unit,
   isNotificationAccessGranted: Boolean,
   onDownloadModel: (VoiceModelInfo) -> Unit,
   onInstallModel: (VoiceModelInfo) -> Unit,
@@ -321,7 +333,7 @@ private fun LandscapeDesktopSettingsLayout(
         } else {
           val backShape = if (uiState.themeMode == WeykyThemeMode.MODERN) CircleShape else RoundedCornerShape(10.dp)
           val backBg = if (uiState.themeMode == WeykyThemeMode.MODERN) Color(0x400C192E) else Color(0xEE0E1722)
-          val backBorder = if (uiState.themeMode == WeykyThemeMode.MODERN) Color(0xFF00D2FF) else Color(0xFF1E2D3D)
+          val backBorder = if (uiState.themeMode == WeykyThemeMode.MODERN) borderColor else Color(0xFF1E2D3D)
           Box(
             modifier = Modifier
               .size(42.dp)
@@ -339,7 +351,7 @@ private fun LandscapeDesktopSettingsLayout(
               Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = if (uiState.themeMode == WeykyThemeMode.MODERN) Color(0xFF00D2FF) else textPrimary,
+                tint = if (uiState.themeMode == WeykyThemeMode.MODERN) borderColor else textPrimary,
                 modifier = Modifier.size(18.dp)
               )
             }
@@ -586,6 +598,8 @@ private fun LandscapeDesktopSettingsLayout(
                   onToggleFavoriteWallpaper = onToggleFavoriteWallpaper,
                   onRestoreMinimalDefault = onRestoreMinimalDefault,
                   onRestoreFullDefaults = onRestoreFullDefaults,
+                  onSelectModernBgPreset = onSelectModernBgPreset,
+                  onRequestDefaultLauncher = onRequestDefaultLauncher,
                   isGrouped = true
                 )
               }
@@ -608,18 +622,6 @@ private fun LandscapeDesktopSettingsLayout(
                   borderColor = borderColor,
                   textPrimary = textPrimary,
                   textSecondary = textSecondary,
-                  themeMode = uiState.themeMode,
-                  isGrouped = true
-                )
-              }
-              SettingsCategory.LAUNCHER -> {
-                LauncherSettingsContent(
-                  uiState = uiState,
-                  isLight = isLight,
-                  borderColor = borderColor,
-                  textPrimary = textPrimary,
-                  textSecondary = textSecondary,
-                  onRequestDefaultLauncher = onRequestDefaultLauncher,
                   themeMode = uiState.themeMode,
                   isGrouped = true
                 )
@@ -656,7 +658,10 @@ private fun LandscapeDesktopSettingsLayout(
                   textSecondary = textSecondary,
                   context = context,
                   themeMode = uiState.themeMode,
-                  isGrouped = true
+                  isGrouped = true,
+                  uiState = uiState,
+                  onToggleNotificationApp = onToggleNotificationApp,
+                  onSetAllNotificationApps = onSetAllNotificationApps
                 )
               }
               SettingsCategory.ABOUT -> {
@@ -702,8 +707,11 @@ private fun PortraitSettingsLayout(
   onToggleFavoriteWallpaper: (String) -> Unit,
   onRestoreMinimalDefault: () -> Unit,
   onRestoreFullDefaults: () -> Unit,
+  onSelectModernBgPreset: (String) -> Unit,
   onTogglePowerSaving: () -> Unit,
   onRequestDefaultLauncher: () -> Unit,
+  onToggleNotificationApp: (String) -> Unit,
+  onSetAllNotificationApps: (Boolean) -> Unit,
   isNotificationAccessGranted: Boolean,
   onDownloadModel: (VoiceModelInfo) -> Unit,
   onInstallModel: (VoiceModelInfo) -> Unit,
@@ -757,7 +765,7 @@ private fun PortraitSettingsLayout(
         } else {
           val backShape = if (uiState.themeMode == WeykyThemeMode.MODERN) CircleShape else RoundedCornerShape(12.dp)
           val backBg = if (uiState.themeMode == WeykyThemeMode.MODERN) Color(0x400C192E) else Color(0xEE0E1722)
-          val backBorder = if (uiState.themeMode == WeykyThemeMode.MODERN) Color(0xFF00D2FF) else Color(0xFF1E2D3D)
+          val backBorder = if (uiState.themeMode == WeykyThemeMode.MODERN) borderColor else Color(0xFF1E2D3D)
           Box(
             modifier = Modifier
               .size(48.dp)
@@ -775,7 +783,7 @@ private fun PortraitSettingsLayout(
               Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = if (uiState.themeMode == WeykyThemeMode.MODERN) Color(0xFF00D2FF) else textPrimary
+                tint = if (uiState.themeMode == WeykyThemeMode.MODERN) borderColor else textPrimary
               )
             }
           }
@@ -836,6 +844,8 @@ private fun PortraitSettingsLayout(
           onToggleFavoriteWallpaper = onToggleFavoriteWallpaper,
           onRestoreMinimalDefault = onRestoreMinimalDefault,
           onRestoreFullDefaults = onRestoreFullDefaults,
+          onSelectModernBgPreset = onSelectModernBgPreset,
+          onRequestDefaultLauncher = onRequestDefaultLauncher,
           isGrouped = false
         )
       }
@@ -882,30 +892,6 @@ private fun PortraitSettingsLayout(
           borderColor = borderColor,
           textPrimary = textPrimary,
           textSecondary = textSecondary,
-          themeMode = uiState.themeMode,
-          isGrouped = false
-        )
-      }
-
-      Spacer(modifier = Modifier.height(16.dp))
-
-      SettingsGroup(
-        title = SettingsCategory.LAUNCHER.title,
-        codeTag = SettingsCategory.LAUNCHER.codeTag,
-        icon = SettingsCategory.LAUNCHER.icon,
-        themeMode = uiState.themeMode,
-        isLight = isLight,
-        accentColor = borderColor,
-        containerColor = panelBg,
-        textPrimary = textPrimary
-      ) {
-        LauncherSettingsContent(
-          uiState = uiState,
-          isLight = isLight,
-          borderColor = borderColor,
-          textPrimary = textPrimary,
-          textSecondary = textSecondary,
-          onRequestDefaultLauncher = onRequestDefaultLauncher,
           themeMode = uiState.themeMode,
           isGrouped = false
         )
@@ -966,7 +952,10 @@ private fun PortraitSettingsLayout(
           textSecondary = textSecondary,
           context = context,
           themeMode = uiState.themeMode,
-          isGrouped = false
+          isGrouped = false,
+          uiState = uiState,
+          onToggleNotificationApp = onToggleNotificationApp,
+          onSetAllNotificationApps = onSetAllNotificationApps
         )
       }
 
@@ -1047,15 +1036,21 @@ private fun SettingsGroup(
     WeykyThemeMode.MODERN -> {
       val cardShape = RoundedCornerShape(20.dp)
       val modernBg = if (isLight) Color(0xEEFFFFFF) else Color(0x400C192E)
+      val secondaryAccent = Color(
+        red = (accentColor.red * 0.65f + 0.22f).coerceIn(0f, 1f),
+        green = (accentColor.green * 0.55f + 0.12f).coerceIn(0f, 1f),
+        blue = (accentColor.blue * 0.75f + 0.25f).coerceIn(0f, 1f),
+        alpha = 0.88f
+      )
       val modernBorder = androidx.compose.ui.graphics.Brush.linearGradient(
-        colors = listOf(Color(0xFF00D2FF), Color(0xFF6366F1), Color(0xFFD946EF))
+        colors = listOf(accentColor, secondaryAccent, accentColor.copy(alpha = 0.75f))
       )
       Box(
         modifier = Modifier
           .fillMaxWidth()
           .clip(cardShape)
           .background(modernBg)
-          .border(1.2.dp, modernBorder, cardShape)
+          .border(1.3.dp, modernBorder, cardShape)
       ) {
         Column(modifier = Modifier.padding(18.dp)) {
           Row(
@@ -1069,13 +1064,13 @@ private fun SettingsGroup(
               modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0x2800D2FF)),
+                .background(accentColor.copy(alpha = 0.16f)),
               contentAlignment = Alignment.Center
             ) {
               Icon(
                 imageVector = icon,
                 contentDescription = title,
-                tint = Color(0xFF00D2FF),
+                tint = accentColor,
                 modifier = Modifier.size(20.dp)
               )
             }

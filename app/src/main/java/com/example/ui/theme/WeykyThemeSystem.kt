@@ -474,3 +474,124 @@ object MinimalGradientPresets {
     Triple("تيتانيوم أسمنتي نقي", 0xFF141E30L, 0xFF243B55L)
   )
 }
+
+/**
+ * Specification for a multi-layered colorful background preset in [WeykyThemeMode.MODERN].
+ */
+data class ModernColorBackgroundPreset(
+  val id: String,
+  val titleAr: String,
+  val darkBaseColors: List<Color>,
+  val lightBaseColors: List<Color>,
+  val leftNebulaColors: List<Color>,
+  val rightNebulaColors: List<Color>,
+  val diagonalBloomColors: List<Color>,
+  val previewSwatches: List<Color>
+)
+
+/**
+ * Curated colorful atmospheric backgrounds for [WeykyThemeMode.MODERN].
+ */
+object ModernBackgroundCatalog {
+  val presets: List<ModernColorBackgroundPreset> = listOf(
+    ModernColorBackgroundPreset(
+      id = "cyber_aurora",
+      titleAr = "شفق سايبربانك",
+      darkBaseColors = listOf(Color(0xFF040B29), Color(0xFF0A1944), Color(0xFF1B0C42), Color(0xFF060B24)),
+      lightBaseColors = listOf(Color(0xFFDBEAFE), Color(0xFFE0E7FF), Color(0xFFF3E8FF), Color(0xFFDBEAFE)),
+      leftNebulaColors = listOf(Color(0xFF00E5FF), Color(0xFF0066FF), Color(0xFF1D4ED8)),
+      rightNebulaColors = listOf(Color(0xFFD946EF), Color(0xFF8B5CF6), Color(0xFF4F46E5)),
+      diagonalBloomColors = listOf(Color(0xFF6366F1), Color(0xFFEC4899)),
+      previewSwatches = listOf(Color(0xFF00E5FF), Color(0xFF6366F1), Color(0xFFD946EF))
+    ),
+    ModernColorBackgroundPreset(
+      id = "royal_amethyst",
+      titleAr = "سديم الأميثيست",
+      darkBaseColors = listOf(Color(0xFF090420), Color(0xFF160736), Color(0xFF240838), Color(0xFF070318)),
+      lightBaseColors = listOf(Color(0xFFF3E8FF), Color(0xFFEDE9FE), Color(0xFFFCE7F3), Color(0xFFF3E8FF)),
+      leftNebulaColors = listOf(Color(0xFFA855F7), Color(0xFF7E22CE), Color(0xFF4C1D95)),
+      rightNebulaColors = listOf(Color(0xFFF43F5E), Color(0xFFEC4899), Color(0xFF9D174D)),
+      diagonalBloomColors = listOf(Color(0xFFC084FC), Color(0xFFFB7185)),
+      previewSwatches = listOf(Color(0xFFA855F7), Color(0xFFEC4899), Color(0xFFF43F5E))
+    ),
+    ModernColorBackgroundPreset(
+      id = "emerald_matrix",
+      titleAr = "زمرد وتركواز",
+      darkBaseColors = listOf(Color(0xFF021414), Color(0xFF052626), Color(0xFF06283D), Color(0xFF020F14)),
+      lightBaseColors = listOf(Color(0xFFD1FAE5), Color(0xFFCCFBF1), Color(0xFFE0F2FE), Color(0xFFD1FAE5)),
+      leftNebulaColors = listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF065F46)),
+      rightNebulaColors = listOf(Color(0xFF06B6D4), Color(0xFF0284C7), Color(0xFF0369A1)),
+      diagonalBloomColors = listOf(Color(0xFF34D399), Color(0xFF22D3EE)),
+      previewSwatches = listOf(Color(0xFF10B981), Color(0xFF14B8A6), Color(0xFF06B6D4))
+    ),
+    ModernColorBackgroundPreset(
+      id = "solar_horizon",
+      titleAr = "أفق الغروب الذهبي",
+      darkBaseColors = listOf(Color(0xFF1A070B), Color(0xFF271006), Color(0xFF24091D), Color(0xFF120509)),
+      lightBaseColors = listOf(Color(0xFFFEF3C7), Color(0xFFFFEDD5), Color(0xFFFEE2E2), Color(0xFFFEF3C7)),
+      leftNebulaColors = listOf(Color(0xFFF59E0B), Color(0xFFD97706), Color(0xFFB45309)),
+      rightNebulaColors = listOf(Color(0xFFEF4444), Color(0xFFE11D48), Color(0xFF9F1239)),
+      diagonalBloomColors = listOf(Color(0xFFFBBF24), Color(0xFFF43F5E)),
+      previewSwatches = listOf(Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFEF4444))
+    ),
+    ModernColorBackgroundPreset(
+      id = "oceanic_neon",
+      titleAr = "المحيط المضيء",
+      darkBaseColors = listOf(Color(0xFF02081F), Color(0xFF061539), Color(0xFF071C3B), Color(0xFF020617)),
+      lightBaseColors = listOf(Color(0xFFDBEAFE), Color(0xFFE0F2FE), Color(0xFFCFFAFE), Color(0xFFDBEAFE)),
+      leftNebulaColors = listOf(Color(0xFF3B82F6), Color(0xFF2563EB), Color(0xFF1D4ED8)),
+      rightNebulaColors = listOf(Color(0xFF00F0FF), Color(0xFF06B6D4), Color(0xFF0E7490)),
+      diagonalBloomColors = listOf(Color(0xFF60A5FA), Color(0xFF38BDF8)),
+      previewSwatches = listOf(Color(0xFF3B82F6), Color(0xFF0284C7), Color(0xFF00F0FF))
+    ),
+    ModernColorBackgroundPreset(
+      id = "crimson_nebula",
+      titleAr = "وهج الياقوت",
+      darkBaseColors = listOf(Color(0xFF16030C), Color(0xFF22061A), Color(0xFF1E0624), Color(0xFF0D0208)),
+      lightBaseColors = listOf(Color(0xFFFFE4E6), Color(0xFFFCE7F3), Color(0xFFFAE8FF), Color(0xFFFFE4E6)),
+      leftNebulaColors = listOf(Color(0xFFFF2A54), Color(0xFFE11D48), Color(0xFF9F1239)),
+      rightNebulaColors = listOf(Color(0xFF8B5CF6), Color(0xFF7C3AED), Color(0xFF5B21B6)),
+      diagonalBloomColors = listOf(Color(0xFFFB7185), Color(0xFFA78BFA)),
+      previewSwatches = listOf(Color(0xFFFF2A54), Color(0xFFEC4899), Color(0xFF8B5CF6))
+    ),
+    ModernColorBackgroundPreset(
+      id = "tropical_prism",
+      titleAr = "طيف الموشور",
+      darkBaseColors = listOf(Color(0xFF05101A), Color(0xFF0B192C), Color(0xFF140A24), Color(0xFF040912)),
+      lightBaseColors = listOf(Color(0xFFDCFCE7), Color(0xFFE0F2FE), Color(0xFFFCE7F3), Color(0xFFDCFCE7)),
+      leftNebulaColors = listOf(Color(0xFF22C55E), Color(0xFF00D2FF), Color(0xFF0284C7)),
+      rightNebulaColors = listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1)),
+      diagonalBloomColors = listOf(Color(0xFF00E5FF), Color(0xFFF472B6)),
+      previewSwatches = listOf(Color(0xFF22C55E), Color(0xFF00D2FF), Color(0xFFEC4899))
+    ),
+    ModernColorBackgroundPreset(
+      id = "arctic_crystal",
+      titleAr = "بلورات قطبية",
+      darkBaseColors = listOf(Color(0xFF040D1A), Color(0xFF0B172A), Color(0xFF0F172A), Color(0xFF030712)),
+      lightBaseColors = listOf(Color(0xFFF0F9FF), Color(0xFFE0F2FE), Color(0xFFEEF2FF), Color(0xFFF0F9FF)),
+      leftNebulaColors = listOf(Color(0xFF38BDF8), Color(0xFF0EA5E9), Color(0xFF0369A1)),
+      rightNebulaColors = listOf(Color(0xFF818CF8), Color(0xFF6366F1), Color(0xFF4338CA)),
+      diagonalBloomColors = listOf(Color(0xFF7DD3FC), Color(0xFFA5B4FC)),
+      previewSwatches = listOf(Color(0xFF38BDF8), Color(0xFF818CF8), Color(0xFFC084FC))
+    )
+  )
+
+  fun findById(id: String): ModernColorBackgroundPreset =
+    presets.firstOrNull { it.id == id } ?: presets.first()
+}
+
+/**
+ * Curated border color presets for [WeykyThemeMode.MODERN].
+ */
+object ModernBorderPresets {
+  val options: List<Pair<String, Long>> = listOf(
+    "سيان متوهج (الافتراضي)" to 0xFF00D2FFL,
+    "بنفسجي ملكي" to 0xFFA855F7L,
+    "ماجنتا نيون" to 0xFFEC4899L,
+    "زمرد سيبراني" to 0xFF10B981L,
+    "ذهبي شمسي" to 0xFFF59E0BL,
+    "أزرق ياقوتي" to 0xFF3B82F6L,
+    "قرمزي متألق" to 0xFFFF2A54L,
+    "بلاتينيوم نقي" to 0xFFE2E8F0L
+  )
+}

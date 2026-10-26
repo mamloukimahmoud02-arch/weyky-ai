@@ -65,6 +65,29 @@ object NotificationRepository {
   @Volatile
   var isPrivacyModeEnabled: Boolean = false
 
+  // Per-app filter (WEYKY card only; never cancels or alters Android OS notifications)
+  @Volatile
+  var disabledAppPackages: Set<String> = emptySet()
+    private set
+
+  @Volatile
+  var explicitlyEnabledAppPackages: Set<String> = emptySet()
+
+  @Volatile
+  var customAppLabels: Map<String, String> = emptyMap()
+
+  fun isAppNotificationEnabled(packageName: String): Boolean {
+    return !disabledAppPackages.contains(packageName)
+  }
+
+  fun setDisabledAppPackages(packages: Set<String>) {
+    disabledAppPackages = packages
+    if (packages.isNotEmpty()) {
+      _importantEvents.value = _importantEvents.value.filter { !packages.contains(it.packageName) }
+      _activeNotifications.value = _activeNotifications.value.filter { !packages.contains(it.packageName) }
+    }
+  }
+
   // Deduplication tracker: packageName + title + text -> timestamp
   private val recentPostedHistory = mutableMapOf<String, Long>()
 
@@ -87,7 +110,7 @@ object NotificationRepository {
 
   /**
    * Evaluates if a notification qualifies as an important, actionable alert.
-   * Drops promotions, ongoing background bars, and silent low-priority updates.
+   * Drops promotions, ongoing background bars, silent low-priority updates, and apps disabled in WEYKY settings.
    */
   fun classifyNotification(
     packageName: String,
@@ -97,6 +120,11 @@ object NotificationRepository {
     isOngoing: Boolean,
     priority: Int
   ): NotificationImportanceCategory {
+    // 0. Check if user disabled this app from appearing in WEYKY's notification card
+    if (!isAppNotificationEnabled(packageName)) {
+      return NotificationImportanceCategory.UNIMPORTANT
+    }
+
     // 1. Ongoing notifications or Media/Transport notifications (music player, persistent foreground service) -> Dropped
     if (isOngoing || category == Notification.CATEGORY_TRANSPORT) return NotificationImportanceCategory.UNIMPORTANT
 
@@ -194,6 +222,11 @@ object NotificationRepository {
       return NotificationImportanceCategory.SECURITY_SYSTEM_ALERT
     }
 
+    // 8. If the app is in explicitlyEnabledAppPackages (selected/enabled by the user in WEYKY), allow its standard notifications
+    if (explicitlyEnabledAppPackages.contains(packageName) && (title.isNotBlank() || text.isNotBlank())) {
+      return NotificationImportanceCategory.PERSONAL_MESSAGE
+    }
+
     return NotificationImportanceCategory.UNIMPORTANT
   }
 
@@ -207,6 +240,9 @@ object NotificationRepository {
     priority: Int,
     id: Int
   ) {
+    if (!isAppNotificationEnabled(packageName)) {
+      return
+    }
     val importance = classifyNotification(packageName, title, text, category, isOngoing, priority)
     if (importance == NotificationImportanceCategory.UNIMPORTANT) {
       return // Purely ignore unimportant notifications
@@ -254,7 +290,7 @@ object NotificationRepository {
   }
 
   fun updateNotifications(notifications: List<NotificationItem>) {
-    _activeNotifications.value = notifications
+    _activeNotifications.value = notifications.filter { isAppNotificationEnabled(it.packageName) }
   }
 
   fun dismissEvent(eventId: String) {
@@ -270,7 +306,7 @@ object NotificationRepository {
   }
 
   fun getSummary(hasPermission: Boolean): NotificationSummary {
-    val events = _importantEvents.value
+    val events = _importantEvents.value.filter { isAppNotificationEnabled(it.packageName) }
     return NotificationSummary(
       totalImportantCount = events.size,
       latestImportantEvent = events.firstOrNull(),
@@ -280,6 +316,9 @@ object NotificationRepository {
   }
 
   private fun resolveAppFriendlyName(packageName: String): String {
+    customAppLabels[packageName]?.takeIf { it.isNotBlank() }?.let {
+      return it.uppercase(Locale.ROOT)
+    }
     val pkg = packageName.lowercase(Locale.ROOT)
     return when {
       pkg.contains("whatsapp") -> "WHATSAPP"

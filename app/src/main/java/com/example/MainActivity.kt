@@ -164,6 +164,7 @@ class MainActivity : ComponentActivity() {
                 onToggleFavoriteWallpaper = { presetId -> viewModel.toggleFavoriteWallpaper(presetId) },
                 onRestoreMinimalDefault = { viewModel.restoreMinimalDefaultBackground() },
                 onRestoreFullDefaults = { viewModel.restoreFullThemeDefaults() },
+                onSelectModernBgPreset = { presetId -> viewModel.setModernBackgroundPreset(presetId) },
                 isNotificationAccessGranted = isNotifAccessGranted,
                 onRequestDefaultLauncher = {
                   val intent = viewModel.createRequestRoleIntent()
@@ -171,6 +172,8 @@ class MainActivity : ComponentActivity() {
                     roleLauncher.launch(intent)
                   }
                 },
+                onToggleNotificationApp = { pkg -> viewModel.toggleNotificationAppAllowed(pkg) },
+                onSetAllNotificationApps = { allowAll -> viewModel.setAllNotificationAppsAllowed(allowAll) },
                 onDownloadModel = { modelInfo -> viewModel.downloadVoiceModel(modelInfo) },
                 onInstallModel = { modelInfo -> viewModel.installVoiceModel(modelInfo) },
                 onInstallModelFromFile = { modelInfo, uri -> viewModel.installVoiceModelFromUri(modelInfo, uri) },

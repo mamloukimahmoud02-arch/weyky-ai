@@ -56,7 +56,25 @@ import com.example.core.voice.model.VoiceModelType
 import com.example.ui.theme.JarvisHudBadge
 import com.example.ui.theme.JarvisHudCard
 import com.example.ui.theme.JarvisHudColors
+import android.graphics.drawable.BitmapDrawable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.graphics.drawable.toBitmap
 import com.example.ui.theme.WeykyThemeMode
 import java.io.File
 import java.util.Locale
@@ -130,7 +148,7 @@ fun SettingsSubSection(
             .fillMaxWidth()
             .clip(shape)
             .background(modernSubBg)
-            .border(1.dp, Color(0x3300D2FF), shape)
+            .border(1.dp, accentColor.copy(alpha = 0.35f), shape)
         ) {
           Column(
             modifier = Modifier
@@ -187,30 +205,69 @@ fun AppearanceSettingsContent(
   onToggleFavoriteWallpaper: (String) -> Unit = {},
   onRestoreMinimalDefault: () -> Unit = {},
   onRestoreFullDefaults: () -> Unit = {},
+  onSelectModernBgPreset: (String) -> Unit = {},
+  onRequestDefaultLauncher: () -> Unit = {},
   isGrouped: Boolean = false
 ) {
-  ThemeSelectionSettingsContent(
-    uiState = uiState,
-    isLight = isLight,
-    borderColor = borderColor,
-    panelBg = panelBg,
-    panelBgElevated = JarvisHudColors.panelBgElevated(isLight),
-    textPrimary = textPrimary,
-    textSecondary = textSecondary,
-    onSelectThemeMode = onSelectThemeMode,
-    onSelectDayNightMode = onSelectDayNightMode,
-    onUpdateCoreScale = onUpdateCoreScale,
-    onUpdateCardBorderColor = onUpdateCardBorderColor,
-    onSelectMinimalBgType = onSelectMinimalBgType,
-    onSelectWallpaperPreset = onSelectWallpaperPreset,
-    onSelectSolidColor = onSelectSolidColor,
-    onSelectGradient = onSelectGradient,
-    onUpdateDimmingAlpha = onUpdateDimmingAlpha,
-    onPickDeviceImage = onPickDeviceImage,
-    onToggleFavoriteWallpaper = onToggleFavoriteWallpaper,
-    onRestoreMinimalDefault = onRestoreMinimalDefault,
-    onRestoreFullDefaults = onRestoreFullDefaults
-  )
+  Column(
+    modifier = Modifier.fillMaxWidth(),
+    verticalArrangement = Arrangement.spacedBy(14.dp)
+  ) {
+    ThemeSelectionSettingsContent(
+      uiState = uiState,
+      isLight = isLight,
+      borderColor = borderColor,
+      panelBg = panelBg,
+      panelBgElevated = JarvisHudColors.panelBgElevated(isLight),
+      textPrimary = textPrimary,
+      textSecondary = textSecondary,
+      onSelectThemeMode = onSelectThemeMode,
+      onSelectDayNightMode = onSelectDayNightMode,
+      onUpdateCoreScale = onUpdateCoreScale,
+      onUpdateCardBorderColor = onUpdateCardBorderColor,
+      onSelectMinimalBgType = onSelectMinimalBgType,
+      onSelectWallpaperPreset = onSelectWallpaperPreset,
+      onSelectSolidColor = onSelectSolidColor,
+      onSelectGradient = onSelectGradient,
+      onUpdateDimmingAlpha = onUpdateDimmingAlpha,
+      onPickDeviceImage = onPickDeviceImage,
+      onToggleFavoriteWallpaper = onToggleFavoriteWallpaper,
+      onRestoreMinimalDefault = onRestoreMinimalDefault,
+      onRestoreFullDefaults = onRestoreFullDefaults,
+      onSelectModernBgPreset = onSelectModernBgPreset
+    )
+
+    // Divider before merged Launcher section
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(1.dp)
+        .background(borderColor.copy(alpha = 0.22f))
+    )
+
+    // Merged Launcher / Home Role Section inside Appearance & HUD
+    SettingsSubSection(
+      title = "وضع الواجهة الرئيسية (Launcher)",
+      subtitle = "تعيين WEYKY كشاشة رئيسية افتراضية للجهاز (ROLE_HOME)",
+      accentColor = borderColor,
+      containerColor = JarvisHudColors.panelBgElevated(isLight),
+      textPrimary = textPrimary,
+      textSecondary = textSecondary,
+      themeMode = uiState.themeMode,
+      isLight = isLight
+    ) {
+      LauncherSettingsContent(
+        uiState = uiState,
+        isLight = isLight,
+        borderColor = borderColor,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        onRequestDefaultLauncher = onRequestDefaultLauncher,
+        themeMode = uiState.themeMode,
+        isGrouped = false
+      )
+    }
+  }
 }
 
 @Composable
@@ -672,14 +729,14 @@ fun VoiceSettingsContent(
       ) {
         Column(modifier = Modifier.padding(10.dp)) {
           Text(
-            text = "تنبيه لمستخدمي Huawei (ART-L29 / أجهزة بدون خدمات جوجل):",
+            text = "تنبيه للأجهزة التي لا تدعم خدمات جوجل:",
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = JarvisHudColors.TacticalAmber
           )
           Spacer(modifier = Modifier.height(4.dp))
           Text(
-            text = "محرك أندرويد الافتراضي في الهاتف لا يدعم النطق العربي لغياب حزم جوجل. صُمم WEYKY بمحرك عصبي مدمج (Piper ONNX)؛ يرجى تنزيل نموذج «كريم» أو «النسائي» أدناه ليعمل النطق الفصيح محلياً وبدون إنترنت.",
+            text = "محرك النظام الافتراضي في الأجهزة غير المزودة بخدمات جوجل قد لا يدعم النطق العربي تلقائياً. صُمم WEYKY بمحرك عصبي مدمج (Piper ONNX)؛ يرجى تنزيل نموذج «كريم» أو «النسائي» أدناه ليعمل النطق الفصيح محلياً بالكامل وبدون إنترنت.",
             fontSize = 11.sp,
             color = textSecondary,
             lineHeight = 16.sp
@@ -970,14 +1027,21 @@ fun PermissionsSettingsContent(
   textSecondary: Color,
   context: Context,
   themeMode: WeykyThemeMode = WeykyThemeMode.TACTICAL,
-  isGrouped: Boolean = false
+  isGrouped: Boolean = false,
+  uiState: WeykyUiState = WeykyUiState(),
+  onToggleNotificationApp: (String) -> Unit = {},
+  onSetAllNotificationApps: (Boolean) -> Unit = {}
 ) {
+  var appSearchQuery by rememberSaveable { mutableStateOf("") }
+  var showAllAppsExpanded by rememberSaveable { mutableStateOf(false) }
+
+  val buttonShape = if (themeMode == WeykyThemeMode.TACTICAL) {
+    CutCornerShape(topStart = 8.dp, bottomEnd = 8.dp, topEnd = 2.dp, bottomStart = 2.dp)
+  } else {
+    RoundedCornerShape(10.dp)
+  }
+
   val permissionsContent = @Composable {
-    val buttonShape = if (themeMode == WeykyThemeMode.TACTICAL) {
-      CutCornerShape(topStart = 8.dp, bottomEnd = 8.dp, topEnd = 2.dp, bottomStart = 2.dp)
-    } else {
-      RoundedCornerShape(10.dp)
-    }
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
@@ -1014,6 +1078,276 @@ fun PermissionsSettingsContent(
     }
   }
 
+  val notificationAppsFilterContent = @Composable {
+    val allApps = uiState.installedApps
+    val disabledPkgs = uiState.disabledNotificationPackages
+    val enabledCount = (allApps.size - disabledPkgs.count { pkg -> allApps.any { it.packageName == pkg } }).coerceAtLeast(0)
+
+    val filteredApps = remember(appSearchQuery, allApps) {
+      if (appSearchQuery.isBlank()) {
+        allApps
+      } else {
+        val q = appSearchQuery.trim().lowercase(Locale.ROOT)
+        allApps.filter {
+          it.label.lowercase(Locale.ROOT).contains(q) ||
+            it.packageName.lowercase(Locale.ROOT).contains(q) ||
+            it.normalizedLabel.lowercase(Locale.ROOT).contains(q)
+        }
+      }
+    }
+
+    val displayedApps = if (showAllAppsExpanded || appSearchQuery.isNotBlank()) {
+      filteredApps
+    } else {
+      filteredApps.take(8)
+    }
+
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .testTag("notification_apps_filter_section"),
+      verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      // Info note emphasizing zero impact on Android OS
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(8.dp))
+          .background(borderColor.copy(alpha = 0.10f))
+          .border(1.dp, borderColor.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
+          .padding(10.dp)
+      ) {
+        Text(
+          text = "اختر التطبيقات التي ستظهر إشعاراتها في بطاقة الإشعارات داخل WEYKY فقط. إيقاف أي تطبيق هنا يخفي تنبيهاته من بطاقة WEYKY دون أي تأثير على إشعارات نظام أندرويد.",
+          fontSize = 11.5.sp,
+          color = textSecondary,
+          lineHeight = 16.sp
+        )
+      }
+
+      // Summary Row + Select All / Deselect All
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "التطبيقات المفعّلة: $enabledCount من ${allApps.size}",
+          fontSize = 12.sp,
+          fontWeight = FontWeight.Bold,
+          color = borderColor
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          OutlinedButton(
+            onClick = { onSetAllNotificationApps(true) },
+            shape = buttonShape,
+            border = BorderStroke(1.dp, borderColor.copy(alpha = 0.6f)),
+            modifier = Modifier
+              .height(34.dp)
+              .testTag("enable_all_notif_apps_button")
+          ) {
+            Text("تفعيل الكل", fontSize = 11.sp, color = borderColor, fontWeight = FontWeight.Bold)
+          }
+          OutlinedButton(
+            onClick = { onSetAllNotificationApps(false) },
+            shape = buttonShape,
+            border = BorderStroke(1.dp, textSecondary.copy(alpha = 0.45f)),
+            modifier = Modifier
+              .height(34.dp)
+              .testTag("disable_all_notif_apps_button")
+          ) {
+            Text("إيقاف الكل", fontSize = 11.sp, color = textSecondary)
+          }
+        }
+      }
+
+      // Search Field
+      OutlinedTextField(
+        value = appSearchQuery,
+        onValueChange = { appSearchQuery = it },
+        placeholder = {
+          Text(
+            text = "ابحث عن تطبيق بالاسم...",
+            fontSize = 12.sp,
+            color = textSecondary.copy(alpha = 0.7f)
+          )
+        },
+        leadingIcon = {
+          Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = "Search",
+            tint = borderColor,
+            modifier = Modifier.size(18.dp)
+          )
+        },
+        trailingIcon = {
+          if (appSearchQuery.isNotEmpty()) {
+            IconButton(onClick = { appSearchQuery = "" }) {
+              Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Clear",
+                tint = textSecondary,
+                modifier = Modifier.size(16.dp)
+              )
+            }
+          }
+        },
+        singleLine = true,
+        colors = OutlinedTextFieldDefaults.colors(
+          focusedBorderColor = borderColor,
+          unfocusedBorderColor = borderColor.copy(alpha = 0.35f),
+          focusedTextColor = textPrimary,
+          unfocusedTextColor = textPrimary,
+          cursorColor = borderColor
+        ),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("notification_apps_search_input")
+      )
+
+      if (allApps.isEmpty()) {
+        Text(
+          text = "لا توجد تطبيقات مثبتة متاحة للعرض حالياً.",
+          fontSize = 12.sp,
+          color = textSecondary,
+          modifier = Modifier.padding(vertical = 6.dp)
+        )
+      } else if (filteredApps.isEmpty()) {
+        Text(
+          text = "لا توجد تطبيقات مطابقة لبحثك.",
+          fontSize = 12.sp,
+          color = textSecondary,
+          modifier = Modifier.padding(vertical = 6.dp)
+        )
+      } else {
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          displayedApps.forEach { app ->
+            val isAllowed = !disabledPkgs.contains(app.packageName)
+            val itemShape = if (themeMode == WeykyThemeMode.TACTICAL) {
+              CutCornerShape(topStart = 8.dp, bottomEnd = 8.dp, topEnd = 2.dp, bottomStart = 2.dp)
+            } else {
+              RoundedCornerShape(10.dp)
+            }
+
+            val iconBitmap = remember(app.packageName) {
+              try {
+                val drawable = context.packageManager.getApplicationIcon(app.packageName)
+                if (drawable is BitmapDrawable && drawable.bitmap != null) {
+                  drawable.bitmap.asImageBitmap()
+                } else {
+                  drawable.toBitmap(width = 72, height = 72).asImageBitmap()
+                }
+              } catch (_: Exception) {
+                null
+              }
+            }
+
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(itemShape)
+                .background(
+                  if (isAllowed) borderColor.copy(alpha = if (isLight) 0.10f else 0.12f)
+                  else Color(0x18000000)
+                )
+                .border(
+                  width = 1.dp,
+                  color = if (isAllowed) borderColor.copy(alpha = 0.45f) else textSecondary.copy(alpha = 0.22f),
+                  shape = itemShape
+                )
+                .clickable { onToggleNotificationApp(app.packageName) }
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .testTag("notif_app_toggle_${app.packageName}"),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+              ) {
+                if (iconBitmap != null) {
+                  Image(
+                    bitmap = iconBitmap,
+                    contentDescription = app.label,
+                    modifier = Modifier
+                      .size(34.dp)
+                      .clip(RoundedCornerShape(8.dp))
+                  )
+                } else {
+                  Box(
+                    modifier = Modifier
+                      .size(34.dp)
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(borderColor.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.Notifications,
+                      contentDescription = app.label,
+                      tint = borderColor,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = app.label,
+                    fontSize = 13.sp,
+                    fontWeight = if (isAllowed) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isAllowed) textPrimary else textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  Text(
+                    text = if (isAllowed) "مسموح بظهور إشعاراته في بطاقة WEYKY" else "مخفي من بطاقة الإشعارات (داخل التطبيق فقط)",
+                    fontSize = 10.5.sp,
+                    color = if (isAllowed) borderColor else textSecondary.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+              }
+
+              Switch(
+                checked = isAllowed,
+                onCheckedChange = { onToggleNotificationApp(app.packageName) },
+                colors = SwitchDefaults.colors(
+                  checkedThumbColor = JarvisHudColors.PitchBlack,
+                  checkedTrackColor = borderColor,
+                  uncheckedTrackColor = if (isLight) Color(0xFFD0DFEC) else Color(0xFF0A1E36)
+                )
+              )
+            }
+          }
+
+          if (filteredApps.size > 8 && appSearchQuery.isBlank()) {
+            OutlinedButton(
+              onClick = { showAllAppsExpanded = !showAllAppsExpanded },
+              shape = buttonShape,
+              border = BorderStroke(1.dp, borderColor.copy(alpha = 0.5f)),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("toggle_expand_notif_apps_button")
+            ) {
+              Text(
+                text = if (showAllAppsExpanded) "طي القائمة (عرض أقل)" else "عرض كافة التطبيقات (${filteredApps.size})",
+                fontSize = 12.sp,
+                color = borderColor,
+                fontWeight = FontWeight.Bold
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+
   if (isGrouped) {
     SettingsSubSection(
       title = "صلاحيات الوصول والوعي بالإشعارات",
@@ -1026,8 +1360,34 @@ fun PermissionsSettingsContent(
       isLight = isLight,
       content = permissionsContent
     )
+    SettingsSubSection(
+      title = "اختيار تطبيقات بطاقة الإشعارات",
+      subtitle = "تحديد التطبيقات التي تظهر إشعاراتها في بطاقة الإشعارات داخل WEYKY دون المساس بإشعارات النظام",
+      accentColor = borderColor,
+      containerColor = JarvisHudColors.panelBgElevated(isLight),
+      textPrimary = textPrimary,
+      textSecondary = textSecondary,
+      themeMode = themeMode,
+      isLight = isLight,
+      content = notificationAppsFilterContent
+    )
   } else {
-    permissionsContent()
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+      permissionsContent()
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(1.dp)
+          .background(borderColor.copy(alpha = 0.22f))
+      )
+      Text(
+        text = "اختيار تطبيقات بطاقة الإشعارات:",
+        fontSize = 13.5.sp,
+        fontWeight = FontWeight.Bold,
+        color = textPrimary
+      )
+      notificationAppsFilterContent()
+    }
   }
 }
 

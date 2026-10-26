@@ -3,7 +3,6 @@ package com.example.ui.settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
@@ -26,9 +25,9 @@ enum class SettingsCategory(
     id = "appearance",
     title = "مظهر النواة والواجهة التكتيكية (HUD)",
     shortTitle = "المظهر والواجهة",
-    codeTag = "MOD.01 // APERTURE & HUD",
+    codeTag = "MOD.01 // APERTURE & HOME_OS",
     icon = Icons.Default.Palette,
-    description = "تخصيص أبعاد النواة، النمط الداكن والفاتح، وألوان الخلفية والإطارات"
+    description = "تخصيص أبعاد النواة، أنماط المظهر، ألوان الخلفية والإطارات، ووضع الواجهة الرئيسية (Launcher)"
   ),
   POWER(
     id = "power",
@@ -46,19 +45,11 @@ enum class SettingsCategory(
     icon = Icons.Default.Sensors,
     description = "قراءات حية لحساسات الحركة والميلان والتقارب والنشاط الحالي"
   ),
-  LAUNCHER(
-    id = "launcher",
-    title = "وضع الواجهة الرئيسية (Launcher)",
-    shortTitle = "الواجهة الرئيسية",
-    codeTag = "MOD.04 // HOME_OS",
-    icon = Icons.Default.Home,
-    description = "إدارة دور WEYKY كشاشة رئيسية افتراضية للجهاز (ROLE_HOME)"
-  ),
   VOICE(
     id = "voice",
     title = "منظومة الصوت والنماذج الذكية",
     shortTitle = "منظومة الصوت",
-    codeTag = "MOD.05 // VOICE_CORE",
+    codeTag = "MOD.04 // VOICE_CORE",
     icon = Icons.Default.GraphicEq,
     description = "المنظومة الهجينة الفصيحة، مكتبة الأصوات، والنماذج العصبية المحلية أوفلاين"
   ),
@@ -66,9 +57,9 @@ enum class SettingsCategory(
     id = "permissions",
     title = "تكامل النظام والصلاحيات",
     shortTitle = "الصلاحيات والنظام",
-    codeTag = "MOD.06 // SEC_CLEARANCE",
+    codeTag = "MOD.05 // SEC_CLEARANCE",
     icon = Icons.Default.Notifications,
-    description = "إدارة صلاحية قراءة الإشعارات والوصول إلى خدمات الهاتف"
+    description = "إدارة صلاحية قراءة الإشعارات، تحديد تطبيقات بطاقة الإشعارات، والوصول إلى خدمات الهاتف"
   ),
   ABOUT(
     id = "about",
@@ -81,6 +72,6 @@ enum class SettingsCategory(
 
   companion object {
     fun fromId(id: String): SettingsCategory =
-      entries.find { it.id == id } ?: APPEARANCE
+      if (id == "launcher") APPEARANCE else entries.find { it.id == id } ?: APPEARANCE
   }
 }

@@ -85,6 +85,8 @@ import com.example.ui.theme.MinimalBackgroundType
 import com.example.ui.theme.MinimalDimmingPresets
 import com.example.ui.theme.MinimalGradientPresets
 import com.example.ui.theme.MinimalSolidColorPresets
+import com.example.ui.theme.ModernBackgroundCatalog
+import com.example.ui.theme.ModernBorderPresets
 import com.example.ui.theme.OfflineWallpaperCatalog
 import com.example.ui.theme.OfflineWallpaperPreset
 import com.example.ui.theme.WallpaperCategory
@@ -117,7 +119,8 @@ fun ThemeSelectionSettingsContent(
   onPickDeviceImage: (Uri) -> Unit,
   onToggleFavoriteWallpaper: (String) -> Unit,
   onRestoreMinimalDefault: () -> Unit,
-  onRestoreFullDefaults: () -> Unit
+  onRestoreFullDefaults: () -> Unit,
+  onSelectModernBgPreset: (String) -> Unit = {}
 ) {
   val context = LocalContext.current
   var showResetConfirmationDialog by remember { mutableStateOf(false) }
@@ -187,6 +190,8 @@ fun ThemeSelectionSettingsContent(
           textPrimary = textPrimary,
           textSecondary = textSecondary,
           onSelectDayNightMode = onSelectDayNightMode,
+          onUpdateCardBorderColor = onUpdateCardBorderColor,
+          onSelectModernBgPreset = onSelectModernBgPreset,
           onUpdateCoreScale = onUpdateCoreScale
         )
       }
@@ -506,30 +511,210 @@ private fun ModernThemeSettingsSection(
   textPrimary: Color,
   textSecondary: Color,
   onSelectDayNightMode: (DayNightMode) -> Unit,
+  onUpdateCardBorderColor: (Long) -> Unit,
+  onSelectModernBgPreset: (String) -> Unit,
   onUpdateCoreScale: (Float) -> Unit
 ) {
   Column(
     modifier = Modifier.fillMaxWidth(),
-    verticalArrangement = Arrangement.spacedBy(10.dp)
+    verticalArrangement = Arrangement.spacedBy(12.dp)
   ) {
     // Info Banner: Dynamic lighting per Section 3
     Box(
       modifier = Modifier
         .fillMaxWidth()
         .clip(RoundedCornerShape(8.dp))
-        .background(Color(0x1800D2FF))
-        .border(1.dp, Color(0x3300D2FF), RoundedCornerShape(8.dp))
+        .background(borderColor.copy(alpha = 0.12f))
+        .border(1.dp, borderColor.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
         .padding(10.dp)
     ) {
       Text(
-        text = "• نمط Modern: إضاءة سينمائية واسعة متمركزة خلف النواة تنتقل بسلاسة مع تغير الحالات (خمول، استماع، تحدث، موسيقى، شحن) وبطاقات زجاجية عصرية.",
+        text = "• نمط Modern: إضاءة سينمائية متمركزة خلف النواة وبطاقات زجاجية عصرية مع إمكانية تخصيص لون الإطارات (البوردر) والخلفية الملونة.",
         fontSize = 11.5.sp,
         color = textSecondary,
         lineHeight = 16.sp
       )
     }
 
-    // Day/Night Mode Selector per Section 3
+    // 1. Modern Border Color Selector
+    Text(
+      text = "لون إطارات البطاقات (Modern Border Color):",
+      fontSize = 12.5.sp,
+      fontWeight = FontWeight.SemiBold,
+      color = textPrimary
+    )
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+      ModernBorderPresets.options.forEach { (label, hexValue) ->
+        val isSelected = uiState.cardBorderColorHex == hexValue
+        val presetColor = Color(hexValue)
+        val swatchShape = RoundedCornerShape(10.dp)
+        Box(
+          modifier = Modifier
+            .clip(swatchShape)
+            .background(if (isLight) Color(0xFFEAF2F8) else Color(0xCC061124))
+            .border(
+              width = if (isSelected) 2.dp else 1.dp,
+              color = if (isSelected) presetColor else presetColor.copy(alpha = 0.4f),
+              shape = swatchShape
+            )
+            .clickable { onUpdateCardBorderColor(hexValue) }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("modern_border_swatch_$hexValue")
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Box(
+              modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(presetColor)
+            )
+            Text(
+              text = label,
+              fontSize = 11.sp,
+              fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+              color = if (isSelected) presetColor else textPrimary
+            )
+            if (isSelected) {
+              Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = presetColor,
+                modifier = Modifier.size(12.dp)
+              )
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Modern Colorful Background Selector
+    Text(
+      text = "الخلفية الملونة (Modern Colorful Background):",
+      fontSize = 12.5.sp,
+      fontWeight = FontWeight.SemiBold,
+      color = textPrimary
+    )
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      ModernBackgroundCatalog.presets.forEach { preset ->
+        val isCurrent = uiState.modernBgPresetId == preset.id
+        Column(
+          modifier = Modifier
+            .width(114.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(panelBg)
+            .border(
+              width = if (isCurrent) 2.dp else 1.dp,
+              color = if (isCurrent) borderColor else Color(0x337CA5B8),
+              shape = RoundedCornerShape(12.dp)
+            )
+            .clickable { onSelectModernBgPreset(preset.id) }
+            .padding(6.dp)
+            .testTag("modern_bg_preset_${preset.id}"),
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(68.dp)
+              .clip(RoundedCornerShape(8.dp))
+              .drawBehind {
+                drawRect(
+                  brush = Brush.linearGradient(
+                    colors = preset.darkBaseColors,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, size.height)
+                  )
+                )
+                drawCircle(
+                  brush = Brush.radialGradient(
+                    colors = listOf(
+                      preset.leftNebulaColors.first().copy(alpha = 0.85f),
+                      Color.Transparent
+                    ),
+                    center = Offset(size.width * 0.25f, size.height * 0.4f),
+                    radius = size.width * 0.65f
+                  ),
+                  center = Offset(size.width * 0.25f, size.height * 0.4f),
+                  radius = size.width * 0.65f
+                )
+                drawCircle(
+                  brush = Brush.radialGradient(
+                    colors = listOf(
+                      preset.rightNebulaColors.first().copy(alpha = 0.85f),
+                      Color.Transparent
+                    ),
+                    center = Offset(size.width * 0.78f, size.height * 0.62f),
+                    radius = size.width * 0.65f
+                  ),
+                  center = Offset(size.width * 0.78f, size.height * 0.62f),
+                  radius = size.width * 0.65f
+                )
+              }
+          ) {
+            // Color swatch dots in bottom-end
+            Row(
+              modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(5.dp),
+              horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+              preset.previewSwatches.forEach { swatch ->
+                Box(
+                  modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(swatch)
+                    .border(0.5.dp, Color.White.copy(alpha = 0.6f), CircleShape)
+                )
+              }
+            }
+            if (isCurrent) {
+              Box(
+                modifier = Modifier
+                  .align(Alignment.TopStart)
+                  .padding(4.dp)
+                  .size(16.dp)
+                  .clip(CircleShape)
+                  .background(borderColor),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Check,
+                  contentDescription = null,
+                  tint = Color.Black,
+                  modifier = Modifier.size(10.dp)
+                )
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(5.dp))
+          Text(
+            text = preset.titleAr,
+            fontSize = 10.5.sp,
+            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+            color = if (isCurrent) borderColor else textPrimary,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
+      }
+    }
+
+    // 3. Day/Night Mode Selector per Section 3
     Text(
       text = "الوضع النهاري والليلي (Day / Night Mode):",
       fontSize = 12.5.sp,
