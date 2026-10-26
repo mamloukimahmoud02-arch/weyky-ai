@@ -71,10 +71,43 @@ object WindowSizeResolver {
     val isCompactLandscape = orientation == AdaptiveOrientation.LANDSCAPE &&
       (heightDp < 500.dp || widthClass == WindowWidthSizeClass.COMPACT)
 
-    val isTablet = (widthClass == WindowWidthSizeClass.EXPANDED) ||
-      (widthClass == WindowWidthSizeClass.MEDIUM && heightClass == WindowHeightSizeClass.EXPANDED)
+    // Smart hardware classification (Tablet vs Phone) invariant to Portrait/Landscape rotation:
+    val smallestDimDp = minOf(
+      physicalScreenWidthDp ?: widthDp,
+      physicalScreenHeightDp ?: heightDp
+    )
+    val largestDimDp = maxOf(
+      physicalScreenWidthDp ?: widthDp,
+      physicalScreenHeightDp ?: heightDp
+    )
 
-    // 4. Resolve high-level layout mode
+    val isTablet = smallestDimDp >= 600.dp && largestDimDp >= 840.dp
+
+    val deviceCategory = when {
+      !isTablet -> DeviceCategory.PHONE
+      smallestDimDp >= 720.dp || largestDimDp >= 1080.dp -> DeviceCategory.TABLET_LARGE
+      else -> DeviceCategory.TABLET_COMPACT
+    }
+
+    val uiScaleFactor = when (deviceCategory) {
+      DeviceCategory.TABLET_LARGE -> {
+        val ratio = (largestDimDp.value / 960f).coerceIn(1.18f, 1.38f)
+        ratio
+      }
+      DeviceCategory.TABLET_COMPACT -> {
+        val ratio = (largestDimDp.value / 840f).coerceIn(1.12f, 1.24f)
+        ratio
+      }
+      DeviceCategory.PHONE -> {
+        if (smallestDimDp < 350.dp || (orientation == AdaptiveOrientation.LANDSCAPE && heightDp < 380.dp)) {
+          0.94f
+        } else {
+          1.0f
+        }
+      }
+    }
+
+    // 4. Resolve high-level layout mode (Tablets support both Portrait and Landscape in TABLET_EXPANDED)
     val layoutMode = when {
       posture == DevicePosture.TABLETOP && heightDp >= 440.dp -> AdaptiveLayoutMode.FOLDABLE_TABLETOP
       posture == DevicePosture.BOOK && widthDp >= 580.dp -> AdaptiveLayoutMode.FOLDABLE_BOOK
@@ -91,10 +124,11 @@ object WindowSizeResolver {
       else -> AdaptiveLayoutMode.PHONE_PORTRAIT
     }
 
-    // 5. Content density & card styling parameters
+    // 5. Content density & card styling parameters:
+    // Tablets in BOTH Portrait and Landscape receive EXPANDED density so all cards scale up properly.
     val density = when {
       heightDp < 480.dp || widthDp < 360.dp -> CardDensity.COMPACT
-      widthDp >= 840.dp && heightDp >= 650.dp -> CardDensity.EXPANDED
+      isTablet || (widthDp >= 840.dp && heightDp >= 650.dp) -> CardDensity.EXPANDED
       else -> CardDensity.STANDARD
     }
 
@@ -142,7 +176,10 @@ object WindowSizeResolver {
       maxCardWidthDp = maxCardWidth,
       contentPaddingHorizontalDp = paddingH,
       contentPaddingVerticalDp = paddingV,
-      cardSpacingDp = spacing
+      cardSpacingDp = spacing,
+      deviceCategory = deviceCategory,
+      smallestScreenWidthDp = smallestDimDp,
+      uiScaleFactor = uiScaleFactor
     )
   }
 }

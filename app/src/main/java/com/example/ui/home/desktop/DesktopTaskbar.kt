@@ -90,6 +90,7 @@ import com.example.ui.theme.WeykyThemeMode
 @Composable
 fun DesktopTaskbar(
   uiState: WeykyUiState,
+  metrics: DesktopTabletMetrics,
   isLight: Boolean,
   borderColor: Color,
   panelBg: Color,
@@ -117,9 +118,9 @@ fun DesktopTaskbar(
   val isModern = themeMode == WeykyThemeMode.MODERN
 
   val taskbarShape: Shape = when {
-    isTactical -> CutCornerShape(6.dp)
-    isModern -> RoundedCornerShape(24.dp)
-    else -> RoundedCornerShape(14.dp)
+    isTactical -> CutCornerShape(8.dp)
+    isModern -> RoundedCornerShape(28.dp)
+    else -> RoundedCornerShape(16.dp)
   }
 
   val taskbarBg = when {
@@ -155,12 +156,12 @@ fun DesktopTaskbar(
     Box(
       modifier = modifier
         .fillMaxWidth()
-        .height(48.dp)
-        .shadow(elevation = if (isModern) 12.dp else 8.dp, shape = taskbarShape)
+        .height(metrics.taskbarHeight)
+        .shadow(elevation = if (isModern) 14.dp else 10.dp, shape = taskbarShape)
         .clip(taskbarShape)
         .background(taskbarBg)
         .border(
-          width = if (isTactical) 1.2.dp else 1.dp,
+          width = if (isTactical) 1.3.dp else 1.dp,
           color = taskbarBorderColor,
           shape = taskbarShape
         )
@@ -169,17 +170,18 @@ fun DesktopTaskbar(
       Row(
         modifier = Modifier
           .fillMaxSize()
-          .padding(horizontal = 8.dp, vertical = 4.dp),
+          .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
       ) {
         // 1. RIGHT SIDE: WEYKY Start Button & Search/Voice Input Box
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
+          horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           DesktopWekyButton(
             isStartMenuOpen = isStartMenuOpen,
+            metrics = metrics,
             themeMode = themeMode,
             borderColor = borderColor,
             textPrimary = textPrimary,
@@ -188,6 +190,7 @@ fun DesktopTaskbar(
 
           DesktopSlimSearchBox(
             uiState = uiState,
+            metrics = metrics,
             themeMode = themeMode,
             borderColor = borderColor,
             panelBgElevated = panelBgElevated,
@@ -204,6 +207,7 @@ fun DesktopTaskbar(
         DesktopPinnedAppsDock(
           pinnedPackages = uiState.pinnedAppPackageNames,
           installedApps = uiState.installedApps,
+          metrics = metrics,
           context = context,
           themeMode = themeMode,
           borderColor = borderColor,
@@ -216,6 +220,7 @@ fun DesktopTaskbar(
         // 3. LEFT SIDE: System Tray (Network, Live Clock, Battery)
         DesktopSystemPill(
           uiState = uiState,
+          metrics = metrics,
           themeMode = themeMode,
           borderColor = borderColor,
           textPrimary = textPrimary,
@@ -239,6 +244,7 @@ fun DesktopTaskbar(
 @Composable
 private fun DesktopSystemPill(
   uiState: WeykyUiState,
+  metrics: DesktopTabletMetrics,
   themeMode: WeykyThemeMode,
   borderColor: Color,
   textPrimary: Color,
@@ -252,9 +258,9 @@ private fun DesktopSystemPill(
   val isModern = themeMode == WeykyThemeMode.MODERN
 
   val pillShape: Shape = when {
-    isTactical -> CutCornerShape(4.dp)
-    isModern -> RoundedCornerShape(16.dp)
-    else -> RoundedCornerShape(10.dp)
+    isTactical -> CutCornerShape(6.dp)
+    isModern -> RoundedCornerShape(18.dp)
+    else -> RoundedCornerShape(12.dp)
   }
 
   val pillBorder = when {
@@ -265,14 +271,14 @@ private fun DesktopSystemPill(
 
   Row(
     modifier = Modifier
-      .height(34.dp)
+      .height(metrics.taskbarControlHeight)
       .clip(pillShape)
       .background(Color.White.copy(alpha = 0.05f))
       .border(1.dp, pillBorder, pillShape)
-      .padding(horizontal = 6.dp, vertical = 2.dp)
+      .padding(horizontal = 8.dp, vertical = 2.dp)
       .testTag("desktop_system_tray"),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(4.dp)
+    horizontalArrangement = Arrangement.spacedBy(6.dp)
   ) {
     // 1. Network Status Indicator (Compact without excess whitespace)
     val network = uiState.networkSnapshot
@@ -286,7 +292,7 @@ private fun DesktopSystemPill(
 
     Box(
       modifier = Modifier
-        .size(20.dp)
+        .size(metrics.systemTrayIconSize + 6.dp)
         .clip(RoundedCornerShape(4.dp))
         .combinedClickable(
           onClick = onNetworkClick,
@@ -299,7 +305,7 @@ private fun DesktopSystemPill(
         imageVector = netIcon,
         contentDescription = "حالة اتصال الشبكة",
         tint = netTint,
-        modifier = Modifier.size(15.dp)
+        modifier = Modifier.size(metrics.systemTrayIconSize)
       )
     }
 
@@ -315,14 +321,14 @@ private fun DesktopSystemPill(
         modifier = Modifier
           .clip(RoundedCornerShape(4.dp))
           .clickable(onClick = onTimeClick)
-          .padding(horizontal = 2.dp, vertical = 2.dp)
+          .padding(horizontal = 3.dp, vertical = 2.dp)
           .testTag("desktop_clock_button"),
         contentAlignment = Alignment.Center
       ) {
         Text(
           text = mergedDateTimeText,
           color = textPrimary,
-          fontSize = 11.sp,
+          fontSize = metrics.systemTrayFontSp,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           softWrap = false,
@@ -340,15 +346,15 @@ private fun DesktopSystemPill(
       modifier = Modifier
         .clip(RoundedCornerShape(4.dp))
         .clickable(onClick = onBatteryClick)
-        .padding(horizontal = 1.dp, vertical = 2.dp)
+        .padding(horizontal = 2.dp, vertical = 2.dp)
         .testTag("desktop_battery_button"),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(2.dp)
+      horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
       Text(
         text = "$percentage%",
         color = Color(0xFF00F0FF),
-        fontSize = 11.sp,
+        fontSize = metrics.systemTrayFontSp,
         fontWeight = FontWeight.Medium,
         maxLines = 1,
         softWrap = false,
@@ -359,7 +365,7 @@ private fun DesktopSystemPill(
         imageVector = if (isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
         contentDescription = "البطارية",
         tint = Color(0xFF00F0FF),
-        modifier = Modifier.size(15.dp)
+        modifier = Modifier.size(metrics.systemTrayIconSize)
       )
     }
   }
@@ -390,6 +396,7 @@ private fun formatShortLandscapeDate(englishDateString: String): String {
 private fun DesktopPinnedAppsDock(
   pinnedPackages: List<String>,
   installedApps: List<AppMatch>,
+  metrics: DesktopTabletMetrics,
   context: Context,
   themeMode: WeykyThemeMode,
   borderColor: Color,
@@ -399,18 +406,18 @@ private fun DesktopPinnedAppsDock(
   modifier: Modifier = Modifier
 ) {
   val itemShape = when (themeMode) {
-    WeykyThemeMode.TACTICAL -> CutCornerShape(4.dp)
-    WeykyThemeMode.MODERN -> RoundedCornerShape(12.dp)
-    WeykyThemeMode.MINIMAL -> RoundedCornerShape(8.dp)
+    WeykyThemeMode.TACTICAL -> CutCornerShape(6.dp)
+    WeykyThemeMode.MODERN -> RoundedCornerShape(14.dp)
+    WeykyThemeMode.MINIMAL -> RoundedCornerShape(10.dp)
   }
 
   Row(
     modifier = modifier
       .horizontalScroll(rememberScrollState())
       .testTag("desktop_pinned_apps_tray")
-      .padding(horizontal = 4.dp),
+      .padding(horizontal = 6.dp),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(6.dp)
+    horizontalArrangement = Arrangement.spacedBy(8.dp)
   ) {
     for (pkg in pinnedPackages) {
       val appMatch = installedApps.firstOrNull { it.packageName == pkg }
@@ -425,7 +432,7 @@ private fun DesktopPinnedAppsDock(
       ) {
         Box(
           modifier = Modifier
-            .size(34.dp)
+            .size(metrics.pinnedAppBoxSize)
             .clip(itemShape)
             .background(Color.White.copy(alpha = 0.05f))
             .combinedClickable(
@@ -444,7 +451,7 @@ private fun DesktopPinnedAppsDock(
                 showMenu = true
               }
             )
-            .padding(2.dp)
+            .padding(3.dp)
             .testTag("pinned_app_$pkg"),
           contentAlignment = Alignment.Center
         ) {
@@ -452,12 +459,12 @@ private fun DesktopPinnedAppsDock(
             Image(
               bitmap = iconBitmap,
               contentDescription = appName,
-              modifier = Modifier.size(26.dp)
+              modifier = Modifier.size(metrics.pinnedAppIconSize)
             )
           } else {
             Box(
               modifier = Modifier
-                .size(26.dp)
+                .size(metrics.pinnedAppIconSize)
                 .clip(CircleShape)
                 .background(borderColor.copy(alpha = 0.25f))
                 .border(1.dp, borderColor.copy(alpha = 0.4f), CircleShape),
@@ -466,7 +473,7 @@ private fun DesktopPinnedAppsDock(
               Text(
                 text = appName.take(1).uppercase(),
                 color = textPrimary,
-                fontSize = 11.sp,
+                fontSize = metrics.systemTrayFontSp,
                 fontWeight = FontWeight.Bold
               )
             }
@@ -496,10 +503,10 @@ private fun DesktopPinnedAppsDock(
         // Active app indicator bar
         Box(
           modifier = Modifier
-            .padding(top = 1.dp)
-            .width(12.dp)
-            .height(2.dp)
-            .clip(RoundedCornerShape(1.dp))
+            .padding(top = 2.dp)
+            .width(14.dp)
+            .height(2.5.dp)
+            .clip(RoundedCornerShape(1.5.dp))
             .background(Color(0xFF00F0FF).copy(alpha = 0.7f))
         )
       }
@@ -517,6 +524,7 @@ private fun DesktopPinnedAppsDock(
 @Composable
 private fun DesktopSlimSearchBox(
   uiState: WeykyUiState,
+  metrics: DesktopTabletMetrics,
   themeMode: WeykyThemeMode,
   borderColor: Color,
   panelBgElevated: Color,
@@ -532,9 +540,9 @@ private fun DesktopSlimSearchBox(
   val isListening = uiState.isVoiceListening
 
   val boxShape: Shape = when {
-    isTactical -> CutCornerShape(6.dp)
-    isModern -> RoundedCornerShape(20.dp)
-    else -> RoundedCornerShape(8.dp)
+    isTactical -> CutCornerShape(8.dp)
+    isModern -> RoundedCornerShape(22.dp)
+    else -> RoundedCornerShape(10.dp)
   }
 
   val boxBg = when {
@@ -552,16 +560,16 @@ private fun DesktopSlimSearchBox(
 
   Row(
     modifier = Modifier
-      .height(34.dp)
-      .widthIn(min = 140.dp, max = 210.dp)
+      .height(metrics.taskbarControlHeight)
+      .widthIn(min = metrics.searchMinWidth, max = metrics.searchMaxWidth)
       .clip(boxShape)
       .background(boxBg)
       .border(
-        width = if (isTactical) 1.2.dp else 1.dp,
+        width = if (isTactical) 1.3.dp else 1.dp,
         color = activeBorder,
         shape = boxShape
       )
-      .padding(horizontal = 6.dp)
+      .padding(horizontal = 8.dp)
       .testTag("home_bottom_bar"),
     verticalAlignment = Alignment.CenterVertically
   ) {
@@ -569,14 +577,14 @@ private fun DesktopSlimSearchBox(
     IconButton(
       onClick = onToggleVoice,
       modifier = Modifier
-        .size(26.dp)
+        .size(32.dp)
         .testTag("voice_input_button")
     ) {
       Icon(
         imageVector = Icons.Default.Mic,
         contentDescription = if (isListening) "جاري الاستماع..." else "البحث الصوتي",
         tint = if (isListening) JarvisHudColors.MagentaPulse else Color(0xFF00F0FF),
-        modifier = Modifier.size(16.dp)
+        modifier = Modifier.size(metrics.systemTrayIconSize)
       )
     }
 
@@ -584,14 +592,14 @@ private fun DesktopSlimSearchBox(
     Box(
       modifier = Modifier
         .weight(1f)
-        .padding(horizontal = 4.dp),
+        .padding(horizontal = 6.dp),
       contentAlignment = Alignment.CenterStart
     ) {
       if (uiState.inputQuery.isEmpty()) {
         val hint = if (isListening) "تكلم الآن..." else "...اسأل وايكي"
         Text(
           text = hint,
-          fontSize = 12.sp,
+          fontSize = metrics.searchFontSp,
           color = if (isListening) JarvisHudColors.MagentaPulse else Color(0xFF6E8299),
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
@@ -605,7 +613,7 @@ private fun DesktopSlimSearchBox(
         singleLine = true,
         textStyle = TextStyle(
           color = textPrimary,
-          fontSize = 12.sp,
+          fontSize = metrics.searchFontSp,
           fontWeight = FontWeight.Normal,
           textAlign = TextAlign.Start,
           fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
@@ -632,14 +640,14 @@ private fun DesktopSlimSearchBox(
           keyboardController?.hide()
         },
         modifier = Modifier
-          .size(26.dp)
+          .size(32.dp)
           .testTag("query_submit_button")
       ) {
         Icon(
           imageVector = Icons.AutoMirrored.Filled.Send,
           contentDescription = "إرسال",
           tint = Color(0xFF00F0FF),
-          modifier = Modifier.size(15.dp)
+          modifier = Modifier.size(metrics.systemTrayIconSize)
         )
       }
     }
@@ -656,6 +664,7 @@ private fun DesktopSlimSearchBox(
 @Composable
 private fun DesktopWekyButton(
   isStartMenuOpen: Boolean,
+  metrics: DesktopTabletMetrics,
   themeMode: WeykyThemeMode,
   borderColor: Color,
   textPrimary: Color,
@@ -665,9 +674,9 @@ private fun DesktopWekyButton(
   val isModern = themeMode == WeykyThemeMode.MODERN
 
   val buttonShape: Shape = when {
-    isTactical -> CutCornerShape(6.dp)
-    isModern -> RoundedCornerShape(20.dp)
-    else -> RoundedCornerShape(8.dp)
+    isTactical -> CutCornerShape(8.dp)
+    isModern -> RoundedCornerShape(22.dp)
+    else -> RoundedCornerShape(10.dp)
   }
 
   val activeBg = if (isStartMenuOpen) {
@@ -692,24 +701,24 @@ private fun DesktopWekyButton(
 
   Row(
     modifier = Modifier
-      .height(34.dp)
+      .height(metrics.taskbarControlHeight)
       .clip(buttonShape)
       .background(activeBg)
       .border(
-        width = if (isTactical) 1.2.dp else 1.dp,
+        width = if (isTactical) 1.3.dp else 1.dp,
         color = activeBorder,
         shape = buttonShape
       )
       .clickable(onClick = onClick)
-      .padding(horizontal = 8.dp, vertical = 2.dp)
+      .padding(horizontal = 10.dp, vertical = 2.dp)
       .testTag("desktop_start_button"),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(6.dp)
+    horizontalArrangement = Arrangement.spacedBy(8.dp)
   ) {
     // WEYKY Circular Emblem
     Box(
       modifier = Modifier
-        .size(24.dp)
+        .size(metrics.startEmblemBoxSize)
         .clip(CircleShape)
         .background(
           Brush.radialGradient(
@@ -726,14 +735,14 @@ private fun DesktopWekyButton(
       Image(
         painter = painterResource(id = R.drawable.ic_launcher_foreground),
         contentDescription = "شعار WEYKY",
-        modifier = Modifier.size(20.dp)
+        modifier = Modifier.size(metrics.startEmblemIconSize)
       )
     }
 
     Text(
       text = "WEYKY",
       color = textPrimary,
-      fontSize = 12.sp,
+      fontSize = metrics.startTitleSp,
       fontWeight = FontWeight.Bold,
       letterSpacing = 0.8.sp,
       fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif

@@ -231,6 +231,7 @@ fun HomeWeatherCard(
   modifier: Modifier = Modifier
 ) {
   val isCompact = density == CardDensity.COMPACT
+  val isExpandedTablet = density == CardDensity.EXPANDED
   val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
   val isModern = uiState.themeMode == WeykyThemeMode.MODERN
   val weather = uiState.weatherSnapshot
@@ -245,19 +246,31 @@ fun HomeWeatherCard(
     ?.takeIf { it.isNotBlank() && it != "موقعي الحالي" }
     ?: "جاري تحديد المنطقة..."
 
-  val cardHeight = if (isCompact) 66.dp else 72.dp
-  val iconBoxSize = if (isCompact) 42.dp else 46.dp
+  val cardHeight = when {
+    isExpandedTablet -> 88.dp
+    isCompact -> 66.dp
+    else -> 72.dp
+  }
+  val iconBoxSize = when {
+    isExpandedTablet -> 58.dp
+    isCompact -> 42.dp
+    else -> 46.dp
+  }
   val viewportShape = when (uiState.themeMode) {
-    WeykyThemeMode.TACTICAL -> CutCornerShape(8.dp)
-    WeykyThemeMode.MODERN -> RoundedCornerShape(14.dp)
-    WeykyThemeMode.MINIMAL -> RoundedCornerShape(12.dp)
+    WeykyThemeMode.TACTICAL -> CutCornerShape(if (isExpandedTablet) 10.dp else 8.dp)
+    WeykyThemeMode.MODERN -> RoundedCornerShape(if (isExpandedTablet) 16.dp else 14.dp)
+    WeykyThemeMode.MINIMAL -> RoundedCornerShape(if (isExpandedTablet) 14.dp else 12.dp)
   }
 
   WeykyAdaptiveCard(
     uiState = uiState,
     accentColor = borderColor,
     containerColor = panelBg,
-    cutCornerSize = if (isCompact) 10.dp else 14.dp,
+    cutCornerSize = when {
+      isExpandedTablet -> 16.dp
+      isCompact -> 10.dp
+      else -> 14.dp
+    },
     tabTitle = null,
     tabPosition = HudTabPosition.NONE,
     onClick = { onQuerySubmit("ما حالة الطقس؟") },
@@ -268,9 +281,12 @@ fun HomeWeatherCard(
     Row(
       modifier = Modifier
         .fillMaxSize()
-        .padding(horizontal = 11.dp, vertical = 9.dp),
+        .padding(
+          horizontal = if (isExpandedTablet) 15.dp else 11.dp,
+          vertical = if (isExpandedTablet) 12.dp else 9.dp
+        ),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(if (isExpandedTablet) 14.dp else 10.dp)
     ) {
       RealtimeSkyViewport(
         weather = weather,
@@ -287,7 +303,11 @@ fun HomeWeatherCard(
       ) {
         Text(
           text = tempText,
-          fontSize = if (isCompact) 15.5.sp else 16.5.sp,
+          fontSize = when {
+            isExpandedTablet -> 20.sp
+            isCompact -> 15.5.sp
+            else -> 16.5.sp
+          },
           fontWeight = FontWeight.Bold,
           color = textPrimary,
           letterSpacing = 0.4.sp,
@@ -295,24 +315,28 @@ fun HomeWeatherCard(
         )
         Text(
           text = condition,
-          fontSize = if (isCompact) 10.sp else 11.sp,
+          fontSize = when {
+            isExpandedTablet -> 13.sp
+            isCompact -> 10.sp
+            else -> 11.sp
+          },
           color = if (isModern) Color(0xFFA5C9F0) else textSecondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis
         )
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(3.dp)
+          horizontalArrangement = Arrangement.spacedBy(if (isExpandedTablet) 4.dp else 3.dp)
         ) {
           Icon(
             imageVector = Icons.Default.Place,
             contentDescription = "Location",
             tint = if (isMinimal || isModern) Color(0xFF00D2FF) else borderColor,
-            modifier = Modifier.size(11.dp)
+            modifier = Modifier.size(if (isExpandedTablet) 14.dp else 11.dp)
           )
           Text(
             text = locationName,
-            fontSize = 9.5.sp,
+            fontSize = if (isExpandedTablet) 11.5.sp else 9.5.sp,
             color = if (isModern) Color(0xFF8EB2D6) else textMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -336,18 +360,27 @@ fun HomeDateCard(
   modifier: Modifier = Modifier
 ) {
   val isCompact = density == CardDensity.COMPACT
+  val isExpandedTablet = density == CardDensity.EXPANDED
   val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
   val isModern = uiState.themeMode == WeykyThemeMode.MODERN
   val primaryDate = uiState.currentDateString.ifBlank { "الخميس، 22 أكتوبر" }
   val englishDate = uiState.currentEnglishDateString.ifBlank { "THURSDAY, 22 OCT" }
   val timeSummary = uiState.currentTimeString.ifBlank { "12:00" }
 
-  val cardHeight = if (isCompact) 66.dp else 72.dp
-  val iconBoxSize = if (isCompact) 42.dp else 46.dp
+  val cardHeight = when {
+    isExpandedTablet -> 88.dp
+    isCompact -> 66.dp
+    else -> 72.dp
+  }
+  val iconBoxSize = when {
+    isExpandedTablet -> 58.dp
+    isCompact -> 42.dp
+    else -> 46.dp
+  }
   val iconShape = when (uiState.themeMode) {
-    WeykyThemeMode.TACTICAL -> CutCornerShape(8.dp)
-    WeykyThemeMode.MODERN -> RoundedCornerShape(14.dp)
-    WeykyThemeMode.MINIMAL -> RoundedCornerShape(12.dp)
+    WeykyThemeMode.TACTICAL -> CutCornerShape(if (isExpandedTablet) 10.dp else 8.dp)
+    WeykyThemeMode.MODERN -> RoundedCornerShape(if (isExpandedTablet) 16.dp else 14.dp)
+    WeykyThemeMode.MINIMAL -> RoundedCornerShape(if (isExpandedTablet) 14.dp else 12.dp)
   }
   val iconBg = when (uiState.themeMode) {
     WeykyThemeMode.MODERN -> Color(0x2E00D2FF)
@@ -364,7 +397,11 @@ fun HomeDateCard(
     uiState = uiState,
     accentColor = borderColor,
     containerColor = panelBg,
-    cutCornerSize = if (isCompact) 10.dp else 14.dp,
+    cutCornerSize = when {
+      isExpandedTablet -> 16.dp
+      isCompact -> 10.dp
+      else -> 14.dp
+    },
     tabTitle = null,
     tabPosition = HudTabPosition.NONE,
     onClick = { onQuerySubmit("ما تاريخ اليوم؟") },
@@ -375,9 +412,12 @@ fun HomeDateCard(
     Row(
       modifier = Modifier
         .fillMaxSize()
-        .padding(horizontal = 11.dp, vertical = 9.dp),
+        .padding(
+          horizontal = if (isExpandedTablet) 15.dp else 11.dp,
+          vertical = if (isExpandedTablet) 12.dp else 9.dp
+        ),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(10.dp)
+      horizontalArrangement = Arrangement.spacedBy(if (isExpandedTablet) 14.dp else 10.dp)
     ) {
       Box(
         modifier = Modifier
@@ -395,7 +435,7 @@ fun HomeDateCard(
           imageVector = Icons.Default.DateRange,
           contentDescription = "Date",
           tint = iconTint,
-          modifier = Modifier.size(22.dp)
+          modifier = Modifier.size(if (isExpandedTablet) 28.dp else 22.dp)
         )
       }
 
@@ -407,7 +447,11 @@ fun HomeDateCard(
       ) {
         Text(
           text = primaryDate,
-          fontSize = if (isCompact) 12.5.sp else 13.5.sp,
+          fontSize = when {
+            isExpandedTablet -> 16.sp
+            isCompact -> 12.5.sp
+            else -> 13.5.sp
+          },
           fontWeight = FontWeight.Bold,
           color = textPrimary,
           maxLines = 1,
@@ -415,7 +459,11 @@ fun HomeDateCard(
         )
         Text(
           text = englishDate.uppercase(),
-          fontSize = if (isCompact) 9.sp else 9.5.sp,
+          fontSize = when {
+            isExpandedTablet -> 11.sp
+            isCompact -> 9.sp
+            else -> 9.5.sp
+          },
           fontFamily = FontFamily.Monospace,
           letterSpacing = 0.6.sp,
           color = if (isModern) Color(0xFFA5C9F0) else textSecondary,
@@ -424,17 +472,17 @@ fun HomeDateCard(
         )
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp)
+          horizontalArrangement = Arrangement.spacedBy(if (isExpandedTablet) 5.dp else 4.dp)
         ) {
           Box(
             modifier = Modifier
-              .size(6.dp)
+              .size(if (isExpandedTablet) 7.5.dp else 6.dp)
               .clip(CircleShape)
               .background(if (isMinimal || isModern) Color(0xFF00D2FF) else borderColor)
           )
           Text(
             text = timeSummary,
-            fontSize = 9.5.sp,
+            fontSize = if (isExpandedTablet) 11.5.sp else 9.5.sp,
             fontFamily = FontFamily.Monospace,
             color = if (isModern) Color(0xFF8EB2D6) else textMuted,
             maxLines = 1,
@@ -458,13 +506,14 @@ fun HomeTopRowCards(
   onQuerySubmit: (String) -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val isExpandedTablet = density == CardDensity.EXPANDED
   CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Row(
       modifier = modifier
         .fillMaxWidth()
         .height(IntrinsicSize.Min)
         .testTag("home_top_row_cards"),
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      horizontalArrangement = Arrangement.spacedBy(if (isExpandedTablet) 14.dp else 10.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       // Left: Date Card (Equal width 1f and equal height)
@@ -503,6 +552,7 @@ fun HomeTopRowCards(
 /**
  * Bottom Control Row: Settings button, flexible text input area, and installed apps button
  * in a single, perfectly unified horizontal row per Section 4.3 of the Master Specification.
+ * Automatically scales up on Tablets in Portrait mode.
  */
 @Composable
 fun HomeBottomControlRow(
@@ -521,19 +571,28 @@ fun HomeBottomControlRow(
   keyboardController: SoftwareKeyboardController?,
   modifier: Modifier = Modifier
 ) {
+  val config = LocalConfiguration.current
+  val isTabletDevice = config.smallestScreenWidthDp >= 600
+  val barHeight = if (isTabletDevice) 60.dp else 50.dp
+  val flankIconSize = if (isTabletDevice) 26.dp else 22.dp
+  val inputFontSize = if (isTabletDevice) 16.sp else 14.sp
+  val hintFontSize = if (isTabletDevice) 15.sp else 13.5.sp
+  val micButtonSize = if (isTabletDevice) 44.dp else 36.dp
+  val micIconSize = if (isTabletDevice) 24.dp else 20.dp
+
   val isModern = uiState.themeMode == WeykyThemeMode.MODERN
   val isMinimal = uiState.themeMode == WeykyThemeMode.MINIMAL
   val isTactical = uiState.themeMode == WeykyThemeMode.TACTICAL
 
   val flankShape = when {
-    isTactical -> CutCornerShape(8.dp)
-    isModern -> RoundedCornerShape(16.dp)
-    else -> RoundedCornerShape(12.dp)
+    isTactical -> CutCornerShape(if (isTabletDevice) 10.dp else 8.dp)
+    isModern -> RoundedCornerShape(if (isTabletDevice) 18.dp else 16.dp)
+    else -> RoundedCornerShape(if (isTabletDevice) 14.dp else 12.dp)
   }
   val pillShape = when {
-    isTactical -> CutCornerShape(10.dp)
-    isModern -> RoundedCornerShape(26.dp)
-    else -> RoundedCornerShape(14.dp)
+    isTactical -> CutCornerShape(if (isTabletDevice) 12.dp else 10.dp)
+    isModern -> RoundedCornerShape(if (isTabletDevice) 30.dp else 26.dp)
+    else -> RoundedCornerShape(if (isTabletDevice) 16.dp else 14.dp)
   }
 
   val modernGlassGradient = Brush.verticalGradient(
@@ -550,13 +609,13 @@ fun HomeBottomControlRow(
       modifier = modifier
         .fillMaxWidth()
         .testTag("home_bottom_bar"),
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      horizontalArrangement = Arrangement.spacedBy(if (isTabletDevice) 14.dp else 10.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       // 1. LEFT BUTTON: Installed Apps (3x3 grid)
       val appsModifier = when {
         isModern -> Modifier
-          .size(50.dp)
+          .size(barHeight)
           .shadow(6.dp, flankShape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
           .clip(flankShape)
           .background(modernGlassGradient)
@@ -564,14 +623,14 @@ fun HomeBottomControlRow(
           .clickable(onClick = onToggleAppDrawer)
           .testTag("app_drawer_button")
         isMinimal -> Modifier
-          .size(50.dp)
+          .size(barHeight)
           .clip(flankShape)
           .background(minimalSlateBg)
           .border(1.dp, minimalBorderColor, flankShape)
           .clickable(onClick = onToggleAppDrawer)
           .testTag("app_drawer_button")
         else -> Modifier
-          .size(50.dp)
+          .size(barHeight)
           .clip(flankShape)
           .background(panelBgElevated)
           .border(1.5.dp, borderColor, flankShape)
@@ -592,7 +651,7 @@ fun HomeBottomControlRow(
           imageVector = Icons.Default.Apps,
           contentDescription = "Applications",
           tint = appsIconTint,
-          modifier = Modifier.size(22.dp)
+          modifier = Modifier.size(flankIconSize)
         )
       }
 
@@ -600,7 +659,7 @@ fun HomeBottomControlRow(
       val pillModifier = when {
         isModern -> Modifier
           .weight(1f)
-          .height(50.dp)
+          .height(barHeight)
           .shadow(6.dp, pillShape, spotColor = Color(0x5500D2FF), ambientColor = Color(0x2200D2FF))
           .clip(pillShape)
           .background(modernGlassGradient)
@@ -608,14 +667,14 @@ fun HomeBottomControlRow(
           .testTag("home_bottom_input_area")
         isMinimal -> Modifier
           .weight(1f)
-          .height(50.dp)
+          .height(barHeight)
           .clip(pillShape)
           .background(minimalSlateBg)
           .border(1.dp, minimalBorderColor, pillShape)
           .testTag("home_bottom_input_area")
         else -> Modifier
           .weight(1f)
-          .height(50.dp)
+          .height(barHeight)
           .clip(pillShape)
           .background(panelBg)
           .border(1.2.dp, borderColor, pillShape)
@@ -629,7 +688,7 @@ fun HomeBottomControlRow(
         Row(
           modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = if (isTabletDevice) 18.dp else 14.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
           // Left Arrow Icon
@@ -638,7 +697,7 @@ fun HomeBottomControlRow(
             contentDescription = "Send Query",
             tint = if (uiState.inputQuery.isNotBlank()) Color(0xFF00D2FF) else Color(0xFF6B7E94),
             modifier = Modifier
-              .size(19.dp)
+              .size(if (isTabletDevice) 23.dp else 19.dp)
               .clickable {
                 if (uiState.inputQuery.isNotBlank()) {
                   onQuerySubmit(uiState.inputQuery)
@@ -649,7 +708,7 @@ fun HomeBottomControlRow(
               }
           )
 
-          Spacer(modifier = Modifier.width(10.dp))
+          Spacer(modifier = Modifier.width(if (isTabletDevice) 12.dp else 10.dp))
 
           // Center Input field
           Box(
@@ -660,7 +719,7 @@ fun HomeBottomControlRow(
               val hint = if (uiState.isVoiceListening) "Listening... تكلم الآن" else "... Ask WEYKY anything"
               Text(
                 text = hint,
-                fontSize = 13.5.sp,
+                fontSize = hintFontSize,
                 color = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else Color(0xFF7A8B9E),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -672,7 +731,7 @@ fun HomeBottomControlRow(
               singleLine = true,
               textStyle = TextStyle(
                 color = textPrimary,
-                fontSize = 14.sp,
+                fontSize = inputFontSize,
                 fontWeight = FontWeight.Normal
               ),
               cursorBrush = SolidColor(Color(0xFF00D2FF)),
@@ -695,14 +754,14 @@ fun HomeBottomControlRow(
           IconButton(
             onClick = onToggleVoice,
             modifier = Modifier
-              .size(36.dp)
+              .size(micButtonSize)
               .testTag("voice_input_button")
           ) {
             Icon(
               imageVector = Icons.Default.Mic,
               contentDescription = "Voice Input",
               tint = if (uiState.isVoiceListening) JarvisHudColors.MagentaPulse else Color(0xFF00D2FF),
-              modifier = Modifier.size(20.dp)
+              modifier = Modifier.size(micIconSize)
             )
           }
         }
@@ -711,7 +770,7 @@ fun HomeBottomControlRow(
       // 3. RIGHT BUTTON: Settings (Gear icon)
       val settingsModifier = when {
         isModern -> Modifier
-          .size(50.dp)
+          .size(barHeight)
           .shadow(6.dp, flankShape, spotColor = Color(0x6600D2FF), ambientColor = Color(0x3300D2FF))
           .clip(flankShape)
           .background(modernGlassGradient)
@@ -719,14 +778,14 @@ fun HomeBottomControlRow(
           .clickable(onClick = onOpenSettings)
           .testTag("settings_button")
         isMinimal -> Modifier
-          .size(50.dp)
+          .size(barHeight)
           .clip(flankShape)
           .background(minimalSlateBg)
           .border(1.dp, minimalBorderColor, flankShape)
           .clickable(onClick = onOpenSettings)
           .testTag("settings_button")
         else -> Modifier
-          .size(50.dp)
+          .size(barHeight)
           .clip(flankShape)
           .background(panelBgElevated)
           .border(1.5.dp, borderColor, flankShape)
@@ -747,7 +806,7 @@ fun HomeBottomControlRow(
           imageVector = Icons.Default.Settings,
           contentDescription = "Settings",
           tint = settingsIconTint,
-          modifier = Modifier.size(22.dp)
+          modifier = Modifier.size(flankIconSize)
         )
       }
     }
@@ -2331,7 +2390,13 @@ fun HomeContextAlertCard(
   borderColor: Color,
   onQuerySubmit: (String) -> Unit,
   modifier: Modifier = Modifier,
-  compactLandscapeMode: Boolean = false
+  compactLandscapeMode: Boolean = false,
+  landscapeMinWidth: Dp = 275.dp,
+  landscapeMaxWidth: Dp = 320.dp,
+  landscapeHeight: Dp = 64.dp,
+  landscapeIconBoxSize: Dp = 44.dp,
+  landscapeTitleSp: androidx.compose.ui.unit.TextUnit = 13.sp,
+  landscapeSubtitleSp: androidx.compose.ui.unit.TextUnit = 10.5.sp
 ) {
   val battery = uiState.batterySnapshot
   val isLowBattery = battery != null && battery.isAvailable && battery.percentage <= 20 &&
@@ -2491,9 +2556,9 @@ fun HomeContextAlertCard(
       val isTactical = uiState.themeMode == WeykyThemeMode.TACTICAL
       val isModern = uiState.themeMode == WeykyThemeMode.MODERN
       val cardShape = when {
-        isTactical -> CutCornerShape(6.dp)
-        isModern -> RoundedCornerShape(16.dp)
-        else -> RoundedCornerShape(10.dp)
+        isTactical -> CutCornerShape(8.dp)
+        isModern -> RoundedCornerShape(18.dp)
+        else -> RoundedCornerShape(12.dp)
       }
       val cardBg = when {
         isTactical -> Color(0xFF030D1A).copy(alpha = 0.90f)
@@ -2508,18 +2573,18 @@ fun HomeContextAlertCard(
 
       Box(
         modifier = modifier
-          .widthIn(min = 250.dp, max = 290.dp)
-          .height(56.dp)
-          .shadow(elevation = if (isModern) 10.dp else 6.dp, shape = cardShape)
+          .widthIn(min = landscapeMinWidth, max = landscapeMaxWidth)
+          .height(landscapeHeight)
+          .shadow(elevation = if (isModern) 12.dp else 8.dp, shape = cardShape)
           .clip(cardShape)
           .background(cardBg)
           .border(
-            width = if (isTactical) 1.2.dp else 1.dp,
+            width = if (isTactical) 1.3.dp else 1.dp,
             color = cardBorder,
             shape = cardShape
           )
           .clickable(onClick = onCardClick)
-          .padding(horizontal = 8.dp, vertical = 6.dp)
+          .padding(horizontal = 10.dp, vertical = 7.dp)
           .testTag(testTagId)
       ) {
         Row(
@@ -2529,18 +2594,18 @@ fun HomeContextAlertCard(
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.weight(1f)
           ) {
             Box(
               modifier = Modifier
-                .size(38.dp)
-                .clip(if (isTactical) CutCornerShape(4.dp) else RoundedCornerShape(8.dp))
+                .size(landscapeIconBoxSize)
+                .clip(if (isTactical) CutCornerShape(5.dp) else RoundedCornerShape(10.dp))
                 .background(iconColor.copy(alpha = 0.16f))
                 .border(
                   width = 1.2.dp,
                   color = iconColor.copy(alpha = 0.85f),
-                  shape = if (isTactical) CutCornerShape(4.dp) else RoundedCornerShape(8.dp)
+                  shape = if (isTactical) CutCornerShape(5.dp) else RoundedCornerShape(10.dp)
                 ),
               contentAlignment = Alignment.Center
             ) {
@@ -2548,7 +2613,7 @@ fun HomeContextAlertCard(
                 imageVector = iconVector,
                 contentDescription = mainTitle,
                 tint = iconColor,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(landscapeIconBoxSize * 0.48f)
               )
             }
 
@@ -2560,17 +2625,17 @@ fun HomeContextAlertCard(
             ) {
               Text(
                 text = mainTitle,
-                fontSize = 11.sp,
+                fontSize = landscapeTitleSp,
                 fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold,
                 color = textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
               )
-              Spacer(modifier = Modifier.height(2.dp))
+              Spacer(modifier = Modifier.height(3.dp))
               Text(
                 text = subLabel,
-                fontSize = 8.5.sp,
+                fontSize = landscapeSubtitleSp,
                 fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif,
                 color = textSecondary,
                 maxLines = 1,
@@ -2581,7 +2646,7 @@ fun HomeContextAlertCard(
 
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
           ) {
             Column(
               horizontalAlignment = Alignment.End,
@@ -2590,7 +2655,7 @@ fun HomeContextAlertCard(
             ) {
               Text(
                 text = rightTopText,
-                fontSize = 9.5.sp,
+                fontSize = landscapeSubtitleSp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold,
                 color = textPrimary,
@@ -2598,7 +2663,7 @@ fun HomeContextAlertCard(
               )
               Text(
                 text = rightBottomLabel,
-                fontSize = 7.5.sp,
+                fontSize = 8.5.sp,
                 fontFamily = FontFamily.Monospace,
                 color = textSecondary,
                 textAlign = TextAlign.End
@@ -2608,14 +2673,14 @@ fun HomeContextAlertCard(
             IconButton(
               onClick = { dismissedSignature = activeEventSignature },
               modifier = Modifier
-                .size(26.dp)
+                .size(30.dp)
                 .testTag("dismiss_alert_button")
             ) {
               Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = "Dismiss Alert",
                 tint = textSecondary,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(16.dp)
               )
             }
           }

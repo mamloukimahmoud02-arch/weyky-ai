@@ -63,12 +63,22 @@ enum class CardDensity {
 }
 
 /**
+ * Hardware form-factor classification resolved from smallest screen width (sw600dp / sw720dp)
+ * and overall display bounds.
+ */
+enum class DeviceCategory {
+  PHONE,          // Standard & large smartphones (smallestWidth < 600dp)
+  TABLET_COMPACT, // 7" - 9" compact tablets & unfolded foldables (smallestWidth 600dp..719dp)
+  TABLET_LARGE    // 10" - 13"+ standard & large tablets (smallestWidth >= 720dp)
+}
+
+/**
  * High-level layout strategy resolved from window metrics and posture.
  */
 enum class AdaptiveLayoutMode {
   PHONE_PORTRAIT,        // Single column vertical composition
   PHONE_LANDSCAPE,       // Side-by-side: Core on one side, HUD & Controls on the other
-  TABLET_EXPANDED,       // Multi-pane balanced tactical HUD
+  TABLET_EXPANDED,       // Multi-pane balanced tactical HUD (Portrait & Landscape Tablets)
   SPLIT_SCREEN_COMPACT,  // Compact vertical or horizontal split with minimal margins
   FOLDABLE_TABLETOP,     // Top half visual/status, bottom half controls
   FOLDABLE_BOOK          // Left pane core/interact, right pane telemetry/events
@@ -95,7 +105,10 @@ data class DeviceProfile(
   val maxCardWidthDp: Dp,
   val contentPaddingHorizontalDp: Dp,
   val contentPaddingVerticalDp: Dp,
-  val cardSpacingDp: Dp
+  val cardSpacingDp: Dp,
+  val deviceCategory: DeviceCategory = if (isTablet) DeviceCategory.TABLET_LARGE else DeviceCategory.PHONE,
+  val smallestScreenWidthDp: Dp = minOf(windowWidthDp, windowHeightDp),
+  val uiScaleFactor: Float = if (isTablet) 1.25f else 1.0f
 ) {
   /**
    * Computes an optimal core size in dp given the user's coreScale preference (default 0.44).
@@ -105,21 +118,20 @@ data class DeviceProfile(
     val scale = coreScale.coerceIn(0.2f, 1.0f)
     return when (layoutMode) {
       AdaptiveLayoutMode.PHONE_LANDSCAPE -> {
-        // In landscape, height is the constraining dimension.
-        // Core is positioned in its own column, so it can use up to 75% of height.
+        // In phone landscape, height is the constraining dimension.
         val availableHeight = (windowHeightDp - 48.dp).coerceAtLeast(80.dp)
         val candidate = windowHeightDp * scale * 1.05f
         minOf(candidate, availableHeight).coerceIn(90.dp, 280.dp)
       }
       AdaptiveLayoutMode.TABLET_EXPANDED,
       AdaptiveLayoutMode.FOLDABLE_BOOK -> {
-        // In tablet mode, calculate based on orientation so portrait tablets can use their centered workspace
+        // In tablet mode, calculate based on orientation so both portrait and landscape tablets have a prominent core
         val paneDimension = if (orientation == AdaptiveOrientation.PORTRAIT) {
-          minOf(windowWidthDp * 0.55f, windowHeightDp * 0.45f)
+          minOf(windowWidthDp * 0.58f, windowHeightDp * 0.46f)
         } else {
-          minOf(windowWidthDp * 0.45f, windowHeightDp * 0.65f)
+          minOf(windowWidthDp * 0.48f, windowHeightDp * 0.72f)
         }
-        (paneDimension * scale * 1.5f).coerceIn(160.dp, 380.dp)
+        (paneDimension * (0.75f + scale * 0.85f)).coerceIn(180.dp, 460.dp)
       }
       AdaptiveLayoutMode.FOLDABLE_TABLETOP -> {
         // Top half viewing pane

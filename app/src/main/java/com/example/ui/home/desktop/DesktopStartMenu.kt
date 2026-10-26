@@ -73,6 +73,7 @@ import com.example.ui.theme.WeykyThemeMode
 @Composable
 fun DesktopStartMenu(
   uiState: WeykyUiState,
+  metrics: DesktopTabletMetrics,
   isLight: Boolean,
   borderColor: Color,
   panelBg: Color,
@@ -143,8 +144,8 @@ fun DesktopStartMenu(
 
   Surface(
     modifier = modifier
-      .widthIn(min = 360.dp, max = 460.dp)
-      .heightIn(min = 380.dp, max = 490.dp)
+      .widthIn(min = metrics.startMenuMinWidth, max = metrics.startMenuMaxWidth)
+      .heightIn(min = metrics.startMenuMinHeight, max = metrics.startMenuMaxHeight)
       .shadow(elevation = if (isModern) 20.dp else 12.dp, shape = menuShape)
       .clip(menuShape)
       .border(

@@ -309,17 +309,18 @@ fun AppSurfaceOverlay(
         }
       } else {
         LazyVerticalGrid(
-          columns = GridCells.Adaptive(minSize = 74.dp),
+          columns = GridCells.Adaptive(minSize = if (deviceProfile.isTablet) 94.dp else 74.dp),
           modifier = Modifier
             .fillMaxWidth()
             .weight(1f)
             .testTag("apps_list"),
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
+          verticalArrangement = Arrangement.spacedBy(if (deviceProfile.isTablet) 16.dp else 12.dp),
+          horizontalArrangement = Arrangement.spacedBy(if (deviceProfile.isTablet) 10.dp else 6.dp)
         ) {
           items(filteredApps, key = { it.packageName }) { app ->
             AppGridIconItem(
               app = app,
+              isTablet = deviceProfile.isTablet,
               borderColor = borderColor,
               textPrimary = textPrimary,
               onClick = { safeLaunchApp(app) }
@@ -333,13 +334,14 @@ fun AppSurfaceOverlay(
 
 /**
  * Standard launcher icon grid item:
- * - App icon at 48dp x 48dp with subtle rounded corners.
+ * - App icon at 48dp x 48dp on phones, 60dp x 60dp on tablets.
  * - App label beneath the icon, centered, max 2 lines with clean ellipsis.
  * - Accessible touch target of at least 48dp.
  */
 @Composable
 private fun AppGridIconItem(
   app: AppMatch,
+  isTablet: Boolean = false,
   borderColor: Color,
   textPrimary: Color,
   onClick: () -> Unit,
@@ -349,6 +351,8 @@ private fun AppGridIconItem(
   val iconBitmap = remember(app.packageName) {
     AppIconCache.getIcon(context, app.packageName)
   }
+  val boxSize = if (isTablet) 64.dp else 52.dp
+  val iconSize = if (isTablet) 60.dp else 48.dp
 
   Column(
     modifier = modifier
@@ -363,7 +367,7 @@ private fun AppGridIconItem(
     // Launcher Icon
     Box(
       modifier = Modifier
-        .size(52.dp),
+        .size(boxSize),
       contentAlignment = Alignment.Center
     ) {
       if (iconBitmap != null) {
@@ -371,8 +375,8 @@ private fun AppGridIconItem(
           bitmap = iconBitmap,
           contentDescription = app.label,
           modifier = Modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .size(iconSize)
+            .clip(RoundedCornerShape(if (isTablet) 14.dp else 10.dp))
         )
       } else {
         // Fallback for Robolectric unit tests or apps without package icon
@@ -380,12 +384,12 @@ private fun AppGridIconItem(
           accentColor = borderColor,
           containerColor = borderColor.copy(alpha = 0.14f),
           cutSize = 8.dp,
-          modifier = Modifier.size(48.dp)
+          modifier = Modifier.size(iconSize)
         ) {
           Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
               text = app.label.firstOrNull()?.uppercase() ?: "?",
-              fontSize = 18.sp,
+              fontSize = if (isTablet) 22.sp else 18.sp,
               fontFamily = FontFamily.Monospace,
               fontWeight = FontWeight.Bold,
               color = borderColor
@@ -395,18 +399,18 @@ private fun AppGridIconItem(
       }
     }
 
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(if (isTablet) 6.dp else 4.dp))
 
     // App Name directly beneath icon
     Text(
       text = app.label,
-      fontSize = 11.5.sp,
+      fontSize = if (isTablet) 13.5.sp else 11.5.sp,
       fontWeight = FontWeight.Normal,
       color = textPrimary,
       textAlign = TextAlign.Center,
       maxLines = 2,
       minLines = 1,
-      lineHeight = 14.sp,
+      lineHeight = if (isTablet) 16.sp else 14.sp,
       overflow = TextOverflow.Ellipsis,
       modifier = Modifier.fillMaxWidth()
     )
