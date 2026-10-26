@@ -200,7 +200,7 @@ fun DesktopTaskbar(
           )
         }
 
-        // 2. CENTER: Pinned Applications Dock
+        // 2. CENTER: Pinned Applications Dock (flexible width so it never crowds out the System Pill)
         DesktopPinnedAppsDock(
           pinnedPackages = uiState.pinnedAppPackageNames,
           installedApps = uiState.installedApps,
@@ -209,7 +209,8 @@ fun DesktopTaskbar(
           borderColor = borderColor,
           textPrimary = textPrimary,
           onLaunchApp = onLaunchApp,
-          onUnpinApp = onUnpinApp
+          onUnpinApp = onUnpinApp,
+          modifier = Modifier.weight(1f, fill = false)
         )
 
         // 3. LEFT SIDE: System Tray (Network, Live Clock, Battery)
@@ -231,8 +232,8 @@ fun DesktopTaskbar(
 
 /**
  * System Tray on the far-left of the Arabic taskbar.
- * Layout (RTL): [ Network Icon | Live Clock | Battery % | Battery Glyph ]
- * Fully interactive: Clicking any component sends its data to Core to be vocalized.
+ * Layout (RTL): [ Network Icon | Merged Date & Clock | Battery % | Battery Glyph ]
+ * Compact with zero wasted whitespace so all elements including the battery icon are always visible.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -264,16 +265,16 @@ private fun DesktopSystemPill(
 
   Row(
     modifier = Modifier
-      .height(36.dp)
+      .height(34.dp)
       .clip(pillShape)
       .background(Color.White.copy(alpha = 0.05f))
       .border(1.dp, pillBorder, pillShape)
-      .padding(horizontal = 8.dp, vertical = 2.dp)
+      .padding(horizontal = 6.dp, vertical = 2.dp)
       .testTag("desktop_system_tray"),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(8.dp)
+    horizontalArrangement = Arrangement.spacedBy(4.dp)
   ) {
-    // 1. Network Status Indicator (Replaces call button)
+    // 1. Network Status Indicator (Compact without excess whitespace)
     val network = uiState.networkSnapshot
     val isConnected = network?.isConnected == true
     val netIcon = when {
@@ -285,8 +286,8 @@ private fun DesktopSystemPill(
 
     Box(
       modifier = Modifier
-        .size(28.dp)
-        .clip(RoundedCornerShape(6.dp))
+        .size(20.dp)
+        .clip(RoundedCornerShape(4.dp))
         .combinedClickable(
           onClick = onNetworkClick,
           onLongClick = onNetworkLongClick
@@ -298,7 +299,7 @@ private fun DesktopSystemPill(
         imageVector = netIcon,
         contentDescription = "حالة اتصال الشبكة",
         tint = netTint,
-        modifier = Modifier.size(16.dp)
+        modifier = Modifier.size(15.dp)
       )
     }
 
@@ -314,16 +315,17 @@ private fun DesktopSystemPill(
         modifier = Modifier
           .clip(RoundedCornerShape(4.dp))
           .clickable(onClick = onTimeClick)
-          .padding(horizontal = 4.dp, vertical = 2.dp)
+          .padding(horizontal = 2.dp, vertical = 2.dp)
           .testTag("desktop_clock_button"),
         contentAlignment = Alignment.Center
       ) {
         Text(
           text = mergedDateTimeText,
           color = textPrimary,
-          fontSize = 12.sp,
+          fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
+          softWrap = false,
           fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
         )
       }
@@ -338,16 +340,18 @@ private fun DesktopSystemPill(
       modifier = Modifier
         .clip(RoundedCornerShape(4.dp))
         .clickable(onClick = onBatteryClick)
-        .padding(horizontal = 2.dp, vertical = 2.dp)
+        .padding(horizontal = 1.dp, vertical = 2.dp)
         .testTag("desktop_battery_button"),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(4.dp)
+      horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
       Text(
         text = "$percentage%",
         color = Color(0xFF00F0FF),
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        softWrap = false,
         fontFamily = if (isTactical) FontFamily.Monospace else FontFamily.SansSerif
       )
 
@@ -391,7 +395,8 @@ private fun DesktopPinnedAppsDock(
   borderColor: Color,
   textPrimary: Color,
   onLaunchApp: (AppMatch) -> Unit,
-  onUnpinApp: (String) -> Unit
+  onUnpinApp: (String) -> Unit,
+  modifier: Modifier = Modifier
 ) {
   val itemShape = when (themeMode) {
     WeykyThemeMode.TACTICAL -> CutCornerShape(4.dp)
@@ -400,7 +405,7 @@ private fun DesktopPinnedAppsDock(
   }
 
   Row(
-    modifier = Modifier
+    modifier = modifier
       .horizontalScroll(rememberScrollState())
       .testTag("desktop_pinned_apps_tray")
       .padding(horizontal = 4.dp),
@@ -548,7 +553,7 @@ private fun DesktopSlimSearchBox(
   Row(
     modifier = Modifier
       .height(34.dp)
-      .widthIn(min = 180.dp, max = 280.dp)
+      .widthIn(min = 140.dp, max = 210.dp)
       .clip(boxShape)
       .background(boxBg)
       .border(

@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -76,6 +78,7 @@ fun HomeScreen(
   modifier: Modifier = Modifier
 ) {
   val keyboardController = LocalSoftwareKeyboardController.current
+  val isLandscapeConfig = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
   val isLight = uiState.isLightMode
   val bgColor = Color(uiState.backgroundColorHex)
   val borderColor = Color(uiState.cardBorderColorHex)
@@ -89,7 +92,7 @@ fun HomeScreen(
     modifier = modifier
       .fillMaxSize()
       .weykyScreenBackground(uiState = uiState)
-      .statusBarsPadding()
+      .then(if (isLandscapeConfig) Modifier else Modifier.statusBarsPadding())
       .navigationBarsPadding()
       .imePadding()
       .testTag("home_screen_root")

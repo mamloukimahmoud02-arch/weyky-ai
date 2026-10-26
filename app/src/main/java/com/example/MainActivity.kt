@@ -1,6 +1,9 @@
 package com.example
 
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -10,10 +13,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.core.capabilities.DeviceCapability
 import com.example.core.state.WeykyScreen
 import com.example.core.state.WeykyViewModel
@@ -24,10 +32,32 @@ import com.example.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
   private val viewModel: WeykyViewModel by viewModels()
 
+  private fun updateSystemBarsForOrientation(orientation: Int) {
+    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+    insetsController.systemBarsBehavior =
+      WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+      insetsController.hide(WindowInsetsCompat.Type.statusBars())
+    } else {
+      insetsController.show(WindowInsetsCompat.Type.statusBars())
+    }
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      window.attributes = window.attributes.apply {
+        layoutInDisplayCutoutMode =
+          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+      }
+    }
+    updateSystemBarsForOrientation(resources.configuration.orientation)
     setContent {
+      val configuration = LocalConfiguration.current
+      LaunchedEffect(configuration.orientation) {
+        updateSystemBarsForOrientation(configuration.orientation)
+      }
       val uiState by viewModel.uiState.collectAsState()
       MyApplicationTheme(darkTheme = !uiState.isLightMode) {
 
@@ -160,8 +190,16 @@ class MainActivity : ComponentActivity() {
 
   override fun onResume() {
     super.onResume()
+    updateSystemBarsForOrientation(resources.configuration.orientation)
     viewModel.voicePipeline.attachActivity(this)
     viewModel.onResume()
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) {
+      updateSystemBarsForOrientation(resources.configuration.orientation)
+    }
   }
 
   override fun onPause() {

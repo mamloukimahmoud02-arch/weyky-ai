@@ -46,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -101,6 +103,7 @@ fun SettingsScreen(
 ) {
   BackHandler { onBack() }
   val context = LocalContext.current
+  val isLandscapeConfig = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
   var pendingModelForFileInstall by remember {
     mutableStateOf<VoiceModelInfo?>(null)
   }
@@ -129,7 +132,7 @@ fun SettingsScreen(
     modifier = modifier
       .fillMaxSize()
       .weykyScreenBackground(uiState = uiState)
-      .statusBarsPadding()
+      .then(if (isLandscapeConfig) Modifier else Modifier.statusBarsPadding())
       .navigationBarsPadding()
       .testTag("settings_screen_root")
   ) {
