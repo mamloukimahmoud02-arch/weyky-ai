@@ -37,9 +37,11 @@ data class ContextRequirements(
 object ContextRequirementsRegistry {
   fun resolve(rawInput: String): ContextRequirements {
     val input = rawInput.trim().lowercase()
+    val norm = com.example.core.intelligence.conversation.LocalKnowledgeBase.normalizeArabic(rawInput)
+    val words = norm.split(" ").filter { it.isNotBlank() }
 
     // 1. Outdoor departure decision: "هل اخرج الان؟" / "اخرج ولا لا" / "should I go out?" / "can I leave now?"
-    if (input.contains("اخرج") || input.contains("اطلع") || input.contains("مغادرة") ||
+    if (input.contains("اخرج") || input.contains("أخرج") || input.contains("اطلع") || input.contains("مغادرة") ||
       input.contains("go out") || input.contains("leave now") || input.contains("should i leave")
     ) {
       return ContextRequirements(
@@ -51,8 +53,10 @@ object ContextRequirementsRegistry {
     }
 
     // 2. Appointment timing / Arrival probability: "هل سأصل في الموعد؟" / "هل بلحق الموعد" / "will I make it on time?"
-    if (input.contains("موعد") || input.contains("اجتماع") || input.contains("سأصل") || input.contains("بأصل") ||
-      input.contains("الحق") || input.contains("ألحق") || input.contains("تأخير") || input.contains("make it on time") || input.contains("reach in time")
+    val isSleepScheduleQuery = norm.contains("نوم") || norm.contains("النوم") || norm.contains("sleep")
+    if (!isSleepScheduleQuery &&
+      (input.contains("موعد") || input.contains("اجتماع") || input.contains("سأصل") || input.contains("ساصل") || input.contains("بأصل") ||
+       input.contains("الحق") || input.contains("ألحق") || input.contains("تأخير") || input.contains("make it on time") || input.contains("reach in time"))
     ) {
       return ContextRequirements(
         domain = IntentDomain.APPOINTMENT_TIMING,
@@ -90,8 +94,11 @@ object ContextRequirementsRegistry {
     }
 
     // 5. Weather inquiry: "ما حالة الطقس؟" / "الطقس" / "what's the weather?"
-    if (input.contains("طقس") || input.contains("الطقس") || input.contains("جو") || input.contains("امطار") ||
-      input.contains("weather") || input.contains("temperature")
+    val isRemotePlaceWeather = norm.contains("صلاله") || norm.contains("ظفار") || norm.contains(" هناك") || norm.endsWith("هناك") || norm.contains("salalah")
+    if (!isRemotePlaceWeather &&
+      (norm.contains("طقس") || words.contains("جو") || words.contains("الجو") || norm.contains("امطار") ||
+       input.contains("weather") || input.contains("temperature")) &&
+      !norm.contains("حراره الجسم") && !norm.contains("حراره الهاتف")
     ) {
       return ContextRequirements(
         domain = IntentDomain.WEATHER_ONLY,

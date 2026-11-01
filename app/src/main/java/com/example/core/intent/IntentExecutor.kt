@@ -38,13 +38,31 @@ class IntentExecutor(
   private val deviceInfoProvider: DeviceInfoProvider? = null
 ) {
 
+  private val fallbackSession: com.example.core.intelligence.conversation.ConversationSession by lazy {
+    com.example.core.intelligence.conversation.ConversationSession()
+  }
+  private val fallbackReasoner: com.example.core.intelligence.conversation.ConversationalReasoner by lazy {
+    com.example.core.intelligence.conversation.ConversationalReasoner(deviceInfoProvider)
+  }
+  private val fallbackLock = Any()
+
+  /**
+   * Returns the primary session owned by LocalConversationalEngine when present,
+   * or the persistent fallback session when LocalConversationalEngine is null.
+   */
+  val activeSession: com.example.core.intelligence.conversation.ConversationSession
+    get() = localConversationalEngine?.session ?: fallbackSession
+
+  fun resetFallbackSession() {
+    synchronized(fallbackLock) {
+      fallbackSession.clear()
+    }
+  }
+
   suspend fun execute(intent: WeykyIntent): ExecutionResult {
     return when (intent) {
       is WeykyIntent.BatteryIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "battery"
-          it.lastReferencedSubject = "battery"
-        }
+        activeSession.updateTopic("battery", "battery")
         batteryActionHandler.handle()
       }
       is WeykyIntent.RamIntent -> storageMemoryActionHandler.handleRam()
@@ -66,49 +84,35 @@ class IntentExecutor(
 
       // Media controls
       is WeykyIntent.MediaIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "music"
-          it.lastReferencedSubject = "music"
-        }
+        activeSession.updateTopic("music", "music")
         mediaActionHandler.handle(intent.action)
       }
       is WeykyIntent.PlaySpecificSongIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "music"
-          it.lastReferencedSubject = "song"
+        activeSession.let {
+          it.updateTopic("music", "song")
           it.pendingExpectation = PendingExpectation.NONE
         }
         mediaActionHandler.handlePlaySpecificSong(intent.songTitle)
       }
       is WeykyIntent.RequestSongTitleIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "music"
-          it.lastReferencedSubject = "song"
+        activeSession.let {
+          it.updateTopic("music", "song")
           it.pendingExpectation = PendingExpectation.AWAITING_SONG_TITLE
         }
         mediaActionHandler.handleRequestSongTitle()
       }
 
       is WeykyIntent.HypotheticalBatteryMusicIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "battery"
-          it.lastReferencedSubject = "battery"
-        }
+        activeSession.updateTopic("battery", "battery")
         contextActionHandler.handleHypotheticalBatteryMusic()
       }
       is WeykyIntent.HypotheticalScheduleDelayIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "schedule"
-          it.lastReferencedSubject = "schedule"
-        }
+        activeSession.updateTopic("schedule", "schedule")
         contextActionHandler.handleHypotheticalScheduleDelay(intent.delayMinutes)
       }
       is WeykyIntent.TimeAwareBatteryForecastIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "battery"
-          it.lastReferencedSubject = "battery"
-        }
-        contextActionHandler.handleTimeAwareBatteryForecast(intent, localConversationalEngine?.session)
+        activeSession.updateTopic("battery", "battery")
+        contextActionHandler.handleTimeAwareBatteryForecast(intent, activeSession)
       }
 
       is WeykyIntent.WifiIntent -> networkActionHandler.handleWifi(intent.openSettings)
@@ -116,10 +120,7 @@ class IntentExecutor(
       is WeykyIntent.CallIntent -> callActionHandler.handle(intent)
       is WeykyIntent.NotificationIntent -> notificationActionHandler.handle(intent.openSettings)
       is WeykyIntent.WeatherIntent -> {
-        localConversationalEngine?.session?.let {
-          it.currentTopic = "weather"
-          it.lastReferencedSubject = "weather"
-        }
+        activeSession.updateTopic("weather", "weather")
         weatherActionHandler.handle(intent.queryType)
       }
       is WeykyIntent.TimeIntent -> executeTime()
@@ -296,10 +297,7 @@ class IntentExecutor(
 
   private fun executePhoneModel(): ExecutionResult {
     val isArabic = Locale.getDefault().language.startsWith("ar")
-    localConversationalEngine?.session?.let {
-      it.currentTopic = "device_info"
-      it.lastReferencedSubject = "phone"
-    }
+    activeSession.updateTopic("device_info", "phone")
     val text = deviceInfoProvider?.getPhoneModelSummary(isArabic)
       ?: if (isArabic) "هاتفك يعمل بنظام Android." else "Your phone runs Android."
     return ExecutionResult.Success(
@@ -315,10 +313,7 @@ class IntentExecutor(
 
   private fun executeDeviceInfoDetailed(): ExecutionResult {
     val isArabic = Locale.getDefault().language.startsWith("ar")
-    localConversationalEngine?.session?.let {
-      it.currentTopic = "device_info"
-      it.lastReferencedSubject = "phone"
-    }
+    activeSession.updateTopic("device_info", "phone")
     val text = deviceInfoProvider?.getDetailedTechnicalSpecs(isArabic)
       ?: if (isArabic) "مواصفات الهاتف غير متوفرة حالياً." else "Phone specs unavailable."
     return ExecutionResult.Success(
@@ -392,7 +387,23 @@ class IntentExecutor(
         proactiveSuggestions = response.actionableSuggestions
       )
     }
-    return executeUnknown(raw)
+    val result = synchronized(fallbackLock) {
+      val cleanQuery = raw.trim()
+      fallbackSession.recordUserTurn(cleanQuery, deferTopicUpdate = true)
+      val reasoningResult = fallbackReasoner.reason(cleanQuery, fallbackSession)
+      fallbackSession.recordAssistantTurn(
+        text = reasoningResult.replyText,
+        suggestions = reasoningResult.proactiveSuggestions,
+        newTopic = reasoningResult.topicDetected
+      )
+      reasoningResult
+    }
+    return ExecutionResult.Success(
+      speech = result.replyText,
+      actionTaken = "Conversational Intelligence [${result.topicDetected ?: "Dialogue"}]",
+      visualState = CoreVisualState.RESPONDING,
+      proactiveSuggestions = result.proactiveSuggestions
+    )
   }
 
   private fun executeUnknown(raw: String): ExecutionResult {

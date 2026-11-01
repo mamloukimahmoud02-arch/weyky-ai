@@ -32,6 +32,7 @@ class ConversationalReasoner(
     // 1. Math and Calculation Check
     val mathResult = LocalKnowledgeBase.evaluateArithmetic(query)
     if (mathResult != null) {
+      session.updateTopic("calculation")
       return ReasoningResult(
         replyText = mathResult,
         topicDetected = "calculation",
@@ -42,10 +43,33 @@ class ConversationalReasoner(
       )
     }
 
-    // 2. Multi-turn Follow-up Resolution
-    if (isFollowUpQuery(normalized, session)) {
+    // 1.5 Explicit Return to an Earlier Topic in Session History (e.g., "نعود إلى موضوع الفيزياء")
+    val explicitReturnTopicId = session.resolveExplicitTopicReturn(query)
+    if (explicitReturnTopicId != null) {
+      session.updateTopic(explicitReturnTopicId)
+      val kbTopic = LocalKnowledgeBase.getTopicById(explicitReturnTopicId)
+      if (kbTopic != null) {
+        val followUpElab = LocalKnowledgeBase.getTopicFollowUpElaboration(explicitReturnTopicId, normalized, isArabic)
+        val baseText = if (followUpElab != null && !session.hasDeliveredElaboration(explicitReturnTopicId, followUpElab.first)) {
+          session.markElaborationDelivered(explicitReturnTopicId, followUpElab.first)
+          followUpElab.first
+        } else {
+          if (isArabic) kbTopic.arabicSummary else kbTopic.englishSummary
+        }
+        val prefix = if (isArabic) "بالعودة إلى موضوعنا السابق: " else "Returning to our earlier topic: "
+        return ReasoningResult(
+          replyText = prefix + baseText,
+          topicDetected = kbTopic.id,
+          proactiveSuggestions = kbTopic.suggestedFollowUps
+        )
+      }
+    }
+
+    // 2. Multi-turn Follow-up Resolution (evaluated BEFORE updating currentTopic to a new topic)
+    if (isFollowUpQuery(normalized, query, session)) {
       val resolvedFollowUp = resolveFollowUp(normalized, session, isArabic)
       if (resolvedFollowUp != null) {
+        session.updateTopic(resolvedFollowUp.topicDetected)
         return resolvedFollowUp
       }
     }
@@ -58,6 +82,7 @@ class ConversationalReasoner(
         } else {
           "You are the user of this device. No personal identity is currently registered in WEYKY, respecting your privacy."
         }
+      session.updateTopic("identity")
       return ReasoningResult(
         replyText = identityText,
         topicDetected = "identity",
@@ -76,6 +101,7 @@ class ConversationalReasoner(
         } else {
           "Your phone is running Android."
         }
+      session.updateTopic("device_info", "phone")
       return ReasoningResult(
         replyText = modelSummary,
         topicDetected = "device_info",
@@ -93,6 +119,7 @@ class ConversationalReasoner(
         } else {
           "Device specifications are currently unavailable from system APIs."
         }
+      session.updateTopic("device_info", "phone")
       return ReasoningResult(
         replyText = detailedSpecs,
         topicDetected = "device_info",
@@ -116,9 +143,15 @@ class ConversationalReasoner(
     }
 
     // 7. Direct Curated Knowledge Base Match
-    val kbTopic = LocalKnowledgeBase.findMatchingTopic(query)
+    val kbTopic = LocalKnowledgeBase.findMatchingTopic(query, session.currentTopic)
     if (kbTopic != null) {
-      val text = if (isArabic) kbTopic.arabicSummary else kbTopic.englishSummary
+      val specificCapitalText = if (kbTopic.id == "capitals_arab") {
+        LocalKnowledgeBase.resolveSpecificCapitalAnswer(query, isArabic)
+      } else {
+        null
+      }
+      val text = specificCapitalText ?: if (isArabic) kbTopic.arabicSummary else kbTopic.englishSummary
+      session.updateTopic(kbTopic.id, kbTopic.id)
       return ReasoningResult(
         replyText = text,
         topicDetected = kbTopic.id,
@@ -148,8 +181,18 @@ class ConversationalReasoner(
       query.contains("what do you know about my phone") || query.contains("device specs")
   }
 
-  private fun isFollowUpQuery(query: String, session: ConversationSession): Boolean {
-    if (session.lastBatteryScenario != null && (query.contains("ملاحة") || query.contains("ملاحه") || query.contains("خرائط") || query.contains("navigation") || query.contains("gps"))) {
+  private fun isSameTopicFamily(topicA: String?, topicB: String?): Boolean {
+    if (topicA == null || topicB == null) return false
+    if (topicA == topicB) return true
+    val travelGroup = setOf("travel", "salalah_tourism")
+    if (topicA in travelGroup && topicB in travelGroup) return true
+    val sleepGroup = setOf("sleep_wellness", "health_wellness")
+    if (topicA in sleepGroup && topicB in sleepGroup) return true
+    return false
+  }
+
+  private fun isFollowUpQuery(query: String, rawQuery: String, session: ConversationSession): Boolean {
+    if (session.lastBatteryScenario != null && (query.contains("ملاحه") || query.contains("خرائط") || query.contains("navigation") || query.contains("gps"))) {
       return true
     }
     if (session.currentTopic == "device_info" || session.lastReferencedSubject == "phone") {
@@ -157,15 +200,45 @@ class ConversationalReasoner(
         return true
       }
     }
-    val followUpStarters = listOf(
-      "وماذا", "وكيف", "ولماذا", "طيب", "وما", "هل هناك", "المزيد", "اكثر", "أكثر", "اشرح",
-      "tell me more", "and how", "what about", "elaborate", "can you give more details", "why"
-    )
-    val hasPronounOrFollowUpMarker = query.contains("هناك") || query.contains("فيها") ||
-      query.contains("عنه") || query.contains("عنها") || query.contains("ذلك") ||
-      query.contains("there") || query.contains("that")
 
-    return hasPronounOrFollowUpMarker || followUpStarters.any { query.startsWith(it) } || query.length < 15
+    val activeTopic = session.currentTopic ?: return false
+
+    val hasBackReferenceMarker = query.contains("هناك") || query.contains("فيها") ||
+      query.contains("عنه") || query.contains("عنها") || query.contains("ذلك") ||
+      query.contains("زيارتها") || query.contains("رويتها") || query.contains("رؤيتها") || query.contains("نراها") ||
+      query.contains("تتكون") || query.contains("تتشكل") ||
+      query.contains("there") || query.contains("that") || query.contains("about it") || query.contains("see them")
+
+    // Check if the user is explicitly asking about a DIFFERENT indexed knowledge topic without back-reference pronouns
+    val matchedNewTopic = LocalKnowledgeBase.findMatchingTopic(rawQuery, null)
+    if (matchedNewTopic != null && !isSameTopicFamily(activeTopic, matchedNewTopic.id) && !hasBackReferenceMarker) {
+      return false
+    }
+
+    // Topic-specific sub-questions on the active topic
+    if (isSameTopicFamily(activeTopic, "salalah_tourism") &&
+      (query.contains("طقس") || query.contains("جو") || query.contains("مطر") || query.contains("ملابس") ||
+       query.contains("متي") || query.contains("وقت") || query.contains("شهر") || query.contains("weather") || query.contains("when"))
+    ) {
+      return true
+    }
+    if (isSameTopicFamily(activeTopic, "sleep_wellness") &&
+      (query.contains("قهوه") || query.contains("كافيين") || query.contains("شاي") || query.contains("coffee") || query.contains("caffeine"))
+    ) {
+      return true
+    }
+    if (activeTopic == "productivity" &&
+      (query.contains("نصيحه للتركيز") || query.contains("تعدد المهام") || query.contains("اكثر") || query.contains("المزيد"))
+    ) {
+      return true
+    }
+
+    val followUpStarters = listOf(
+      "وماذا", "وكيف", "ولماذا", "طيب", "وما", "هل هناك", "وهل", "المزيد", "اكثر", "اشرح", "وضح", "حدثني عن",
+      "tell me more", "and how", "what about", "elaborate", "can you give more details", "explain"
+    )
+
+    return hasBackReferenceMarker || followUpStarters.any { query.startsWith(it) }
   }
 
   private fun resolveFollowUp(
@@ -174,7 +247,7 @@ class ConversationalReasoner(
     isArabic: Boolean
   ): ReasoningResult? {
     // 0. Battery scenario follow-up: "وماذا لو استخدمت الملاحة أيضًا؟"
-    if (session.lastBatteryScenario != null && (query.contains("ملاحة") || query.contains("ملاحه") || query.contains("خرائط") || query.contains("navigation") || query.contains("gps"))) {
+    if (session.lastBatteryScenario != null && (query.contains("ملاحه") || query.contains("خرائط") || query.contains("navigation") || query.contains("gps"))) {
       val prevScenario = session.lastBatteryScenario!!
       val limitation = batteryForecastCalculator.reasonNavigationFollowUp(prevScenario, isArabic)
       session.lastBatteryScenario = limitation.updatedScenario
@@ -210,74 +283,49 @@ class ConversationalReasoner(
       }
     }
 
-    when (topic) {
-      "travel" -> {
-        if (query.contains("طقس") || query.contains("جو") || query.contains("مطر") || query.contains("ملابس") || query.contains("weather") || query.contains("cold")) {
-          val reply = if (isArabic) {
-            "في صلالة خلال موسم الخريف، يكون الطقس معتدلاً ومائلاً للبرودة في الجبال (~22-25°م) مع رذاذ وضباب مستمر. يُنصح بإحضار ملابس خفيفة مع سترة مقاومة للرطوبة وأحذية مريحة للمشي في الطبيعة."
-          } else {
-            "In Salalah during the Khareef season, the weather is pleasantly mild and mist-covered (approx 22°C), cooler in mountain areas. Pack light layers and a rain-resistant jacket."
-          }
-          return ReasoningResult(
-            replyText = reply,
-            topicDetected = "travel",
-            proactiveSuggestions = listOf(
-              ActionableOption(if (isArabic) "طقس منطقتي الآن" else "Local weather", "ما حالة الطقس؟"),
-              ActionableOption(if (isArabic) "هل أخرج الآن؟" else "Should I leave?", "هل اخرج الان؟")
-            )
-          )
-        }
-        if (query.contains("متى") || query.contains("وقت") || query.contains("شهر") || query.contains("when")) {
-          val reply = if (isArabic) {
-            "أفضل وقت لزيارة صلالة للاستمتاع بالخضرة والضباب هو من منتصف يوليو حتى نهاية أغسطس، حيث يكون الخريف في ذروته."
-          } else {
-            "The best time to visit Salalah for lush greenery is between July and August during the peak of Khareef season."
-          }
-          return ReasoningResult(
-            replyText = reply,
-            topicDetected = "travel",
-            proactiveSuggestions = listOf(
-              ActionableOption(if (isArabic) "أبرز المعالم" else "Top attractions", "حدثني عن صلالة"),
-              ActionableOption(if (isArabic) "مواعيدي القادمة" else "Next appointments", "هل سأصل في الموعد؟")
-            )
-          )
-        }
+    // Resolve follow-ups across all curated KnowledgeBase topics (including travel/salalah_tourism, sleep_wellness, physics_universe, etc.)
+    val elaboration = LocalKnowledgeBase.getTopicFollowUpElaboration(topic, query, isArabic)
+    if (elaboration != null) {
+      val canonicalTopic = when (topic) {
+        "travel" -> "salalah_tourism"
+        "health_wellness" -> "sleep_wellness"
+        else -> topic
       }
-      "sleep_wellness" -> {
-        if (query.contains("قهوة") || query.contains("كافيين") || query.contains("شاي") || query.contains("coffee") || query.contains("caffeine")) {
-          val reply = if (isArabic) {
-            "الكافيين يبقى نصف عمره في الجسم لمدة 6 إلى 8 ساعات. لذلك يُفضل التوقف عن شرب القهوة بعد الساعة 2 ظهراً لضمان عدم تأثيره على مراحل النوم العميق."
+      val kbTopic = LocalKnowledgeBase.getTopicById(canonicalTopic)
+      val suggestions = elaboration.second.ifEmpty { kbTopic?.suggestedFollowUps ?: emptyList() }
+
+      if (session.hasDeliveredElaboration(canonicalTopic, elaboration.first)) {
+        // Avoid mechanically repeating the exact same elaboration text if it adds no new value.
+        // State the boundary of locally indexed details and invite the user to pick a specific angle.
+        val availableAngles = suggestions.joinToString("، ") { it.title }
+        val nonRepetitiveReply = if (isArabic) {
+          if (availableAngles.isNotBlank()) {
+            "لقد استعرضنا بالفعل التفاصيل الإضافية المسجلة محلياً في قاعدة المعرفة حول هذا الجانب. يمكنك تحديد زاوية فرعية محددة ترغب في التركيز عليها (مثل: $availableAngles) أو الانتقال إلى موضوع آخر."
           } else {
-            "Caffeine has a half-life of 6 to 8 hours. It is best to avoid coffee after 2 PM to protect deep sleep stages."
+            "لقد استعرضنا بالفعل جميع التفاصيل المسجلة محلياً في قاعدة المعرفة حول هذا الموضوع. يرجى تحديد الجانب الذي تود الاستفسار عنه أو طرح سؤال في موضوع جديد."
           }
-          return ReasoningResult(
-            replyText = reply,
-            topicDetected = "sleep_wellness",
-            proactiveSuggestions = listOf(
-              ActionableOption(if (isArabic) "إطفاء الكشاف" else "Turn off torch", "اطفئ الكشاف"),
-              ActionableOption(if (isArabic) "كم الساعة؟" else "Current time", "كم الساعة؟")
-            )
-          )
-        }
-      }
-      "productivity" -> {
-        if (query.contains("اكثر") || query.contains("المزيد") || query.contains("نصيحة") || query.contains("more") || query.contains("tips")) {
-          val reply = if (isArabic) {
-            "نصيحة إضافية للتركيز: تجنب تعدد المهام (Multitasking). أظهرت الدراسات أن التركيز على مهمة واحدة يرفع الكفاءة بنسبة 40% ويقلل الإجهاد الذهني."
+        } else {
+          if (availableAngles.isNotBlank()) {
+            "We have already covered the locally indexed details for this aspect. Please specify which angle you would like to focus on (e.g., $availableAngles) or switch to another topic."
           } else {
-            "Additional tip: Avoid multitasking. Research indicates single-task focus boosts efficiency by up to 40% while lowering cognitive strain."
+            "We have already covered all locally indexed details for this topic. Please specify a particular aspect or ask about another topic."
           }
-          return ReasoningResult(
-            replyText = reply,
-            topicDetected = "productivity",
-            proactiveSuggestions = listOf(
-              ActionableOption(if (isArabic) "فتح التقويم" else "Open Calendar", "افتح التقويم"),
-              ActionableOption(if (isArabic) "فحص البطارية" else "Check battery", "البطارية")
-            )
-          )
         }
+        return ReasoningResult(
+          replyText = nonRepetitiveReply,
+          topicDetected = canonicalTopic,
+          proactiveSuggestions = suggestions
+        )
       }
+
+      session.markElaborationDelivered(canonicalTopic, elaboration.first)
+      return ReasoningResult(
+        replyText = elaboration.first,
+        topicDetected = canonicalTopic,
+        proactiveSuggestions = suggestions
+      )
     }
+
     return null
   }
 

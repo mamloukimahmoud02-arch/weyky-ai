@@ -22,7 +22,7 @@ class LocalConversationalEngine(
 
   suspend fun respond(userQuery: String): ConversationalResponse {
     val query = userQuery.trim()
-    session.recordUserTurn(query)
+    session.recordUserTurn(query, deferTopicUpdate = true)
 
     // 1. Check if the query is a context-grounded query
     val requirements = ContextRequirementsRegistry.resolve(query)

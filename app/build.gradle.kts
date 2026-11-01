@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -149,3 +150,21 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+val ensureDebugKeystore = tasks.register("ensureDebugKeystore") {
+  val keystoreFile = rootProject.layout.projectDirectory.file("debug.keystore").asFile
+  val base64File = rootProject.layout.projectDirectory.file("debug.keystore.base64").asFile
+  outputs.file(keystoreFile)
+  onlyIf { !keystoreFile.exists() && base64File.exists() }
+  doLast {
+    if (!keystoreFile.exists() && base64File.exists()) {
+      val base64Content = base64File.readText().replace("\\s".toRegex(), "")
+      keystoreFile.writeBytes(Base64.getDecoder().decode(base64Content))
+    }
+  }
+}
+
+tasks.matching { it.name.startsWith("validateSigning") }.configureEach {
+  dependsOn(ensureDebugKeystore)
+}
+

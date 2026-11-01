@@ -203,6 +203,42 @@ object IntentParser {
     return WeykyIntent.CompoundIntent(steps = steps, rawQuery = rawInput)
   }
 
+  private fun hasWord(input: String, vararg targetWords: String): Boolean {
+    val tokens = input.split(" ").filter { it.isNotBlank() }
+    return targetWords.any { target -> tokens.contains(target) }
+  }
+
+  private fun isClockOrDateQuery(input: String): Boolean {
+    // Exclude time management, sleep biological clock, travel best time, and historical knowledge queries
+    if (input.contains("تنظيم الوقت") || input.contains("اداره الوقت") || input.contains("time management") ||
+      input.contains("افضل وقت") || input.contains("وقت لزياره") || input.contains("وقت للنوم") ||
+      input.contains("موعد النوم") || input.contains("ساعات النوم") || input.contains("كم ساعه انام") ||
+      input.contains("انام في اليوم") || input.contains("الساعه البيولوجيه") || input.contains("لضبط الساعه") ||
+      input.contains("في الثانيه") || input.contains("في الدقيقه") || input.contains("ضوء الشمس")
+    ) {
+      return false
+    }
+
+    // Check if "تاريخ" refers to history of a subject rather than today's calendar date
+    if (input.contains("تاريخ")) {
+      val isCurrentDateQuery = input == "تاريخ" || input == "التاريخ" ||
+        input.contains("تاريخ اليوم") || input.contains("كم التاريخ") ||
+        input.contains("ما هو التاريخ") || input.contains("ما تاريخ") ||
+        input.contains("التاريخ الان") || input.contains("التاريخ اليوم")
+      if (!isCurrentDateQuery) return false
+    }
+
+    return input == "الوقت" || input == "وقت" || input == "الساعه" || input == "ساعه" ||
+      input == "التاريخ" || input == "تاريخ" || input == "اليوم" ||
+      input == "time" || input == "clock" || input == "date" || input == "today" ||
+      input.contains("كم الساعه") || input.contains("ما الوقت") || input.contains("كم الوقت") ||
+      input.contains("الوقت الان") || input.contains("الساعه الان") || input.contains("الساعه كم") ||
+      input.contains("تاريخ اليوم") || input.contains("كم التاريخ") || input.contains("ما هو التاريخ") ||
+      input.contains("اي يوم اليوم") || input.contains("ما هو اليوم") ||
+      input.contains("what time") || input.contains("current time") || input.contains("tell me the time") ||
+      input.contains("what is the date") || input.contains("today's date") || input.contains("what day is")
+  }
+
   fun parse(
     rawInput: String,
     session: com.example.core.intelligence.conversation.ConversationSession? = null,
@@ -231,6 +267,11 @@ object IntentParser {
       if (compound != null) {
         return compound
       }
+    }
+
+    // 0.5 Arithmetic & Calculation Queries -> Route directly to ConversationalEngine / LocalKnowledgeBase
+    if (com.example.core.intelligence.conversation.LocalKnowledgeBase.evaluateArithmetic(rawInput) != null) {
+      return WeykyIntent.ConversationalIntent(rawInput)
     }
 
     // 1. Semantic classification & disambiguation: Questions vs Commands vs Hypotheticals
@@ -283,47 +324,52 @@ object IntentParser {
 
     // Contextual Weather follow-ups when previous topic was weather or direct weather questions
     val isWeatherContext = session?.currentTopic == "weather" || session?.lastReferencedSubject == "weather"
+    val isRemotePlaceWeather = input.contains("صلاله") || input.contains("ظفار") || input.contains("salalah") ||
+      ((input.contains("هناك") || input.contains("فيها") || hasWord(input, "there")) &&
+       (session?.currentTopic == "salalah_tourism" || session?.currentTopic == "travel"))
 
-    // "ماذا عن المساء؟" / "طقس المساء"
-    if (input.contains("المساء") || input.contains("الليله") || input.contains("مساء") || input.contains("في الليل") || input.contains("evening") || input.contains("tonight")) {
-      if (input.contains("طقس") || input.contains("جو") || input.contains("حراره") || input.contains("مطر") || isWeatherContext) {
-        return WeykyIntent.WeatherIntent(WeatherQueryType.HOURLY_EVENING, rawInput)
+    if (!isRemotePlaceWeather) {
+      // "ماذا عن المساء؟" / "طقس المساء"
+      if (input.contains("المساء") || input.contains("الليله") || input.contains("مساء") || input.contains("في الليل") || input.contains("evening") || input.contains("tonight")) {
+        if (input.contains("طقس") || hasWord(input, "جو", "الجو") || input.contains("حراره") || input.contains("مطر") || isWeatherContext) {
+          return WeykyIntent.WeatherIntent(WeatherQueryType.HOURLY_EVENING, rawInput)
+        }
       }
-    }
 
-    // "هل ستمطر خلال الساعتين القادمتين؟" / "هل في مطر قريبا"
-    if ((input.contains("تمطر") || input.contains("ستمطر") || input.contains("مطر") || input.contains("rain")) &&
-      (input.contains("ساعتين") || input.contains("قادمه") || input.contains("قريبا") || input.contains("الان") || input.contains("اليوم") || input.contains("soon") || input.contains("hours"))
-    ) {
-      return WeykyIntent.WeatherIntent(WeatherQueryType.RAIN_SOON, rawInput)
-    }
-
-    // "كيف ستكون الرياح غدا؟" / "سرعه الرياح غدا"
-    if ((input.contains("رياح") || input.contains("الرياح") || input.contains("هواء") || input.contains("wind")) &&
-      (input.contains("غدا") || input.contains("بكره") || input.contains("اليوم") || input.contains("كم") || input.contains("tomorrow") || isWeatherContext)
-    ) {
-      return WeykyIntent.WeatherIntent(WeatherQueryType.WIND_TOMORROW, rawInput)
-    }
-
-    // "قارن بين طقس اليوم وغدا"
-    if (input.contains("قارن") || input.contains("مقارنه") || (input.contains("اليوم") && (input.contains("غدا") || input.contains("وغدا") || input.contains("بكره")))) {
-      if (input.contains("طقس") || input.contains("جو") || isWeatherContext) {
-        return WeykyIntent.WeatherIntent(WeatherQueryType.COMPARE_TOMORROW, rawInput)
+      // "هل ستمطر خلال الساعتين القادمتين؟" / "هل في مطر قريبا"
+      if ((input.contains("تمطر") || input.contains("ستمطر") || input.contains("مطر") || hasWord(input, "rain", "raining", "rainy")) &&
+        (input.contains("ساعتين") || input.contains("قادمه") || input.contains("قريبا") || input.contains("الان") || input.contains("اليوم") || input.contains("soon") || input.contains("hours"))
+      ) {
+        return WeykyIntent.WeatherIntent(WeatherQueryType.RAIN_SOON, rawInput)
       }
-    }
 
-    // "متى اقرب احتمال للمطر هذا الاسبوع؟"
-    if ((input.contains("مطر") || input.contains("للمطر") || input.contains("الامطار") || input.contains("rain")) &&
-      (input.contains("اسبوع") || input.contains("الاسبوع") || input.contains("متي") || input.contains("week") || input.contains("اقرب") || input.contains("قادم"))
-    ) {
-      return WeykyIntent.WeatherIntent(WeatherQueryType.WEEK_RAIN, rawInput)
-    }
+      // "كيف ستكون الرياح غدا؟" / "سرعه الرياح غدا"
+      if ((input.contains("رياح") || input.contains("الرياح") || input.contains("هواء") || hasWord(input, "wind", "windy")) &&
+        (input.contains("غدا") || input.contains("بكره") || input.contains("اليوم") || input.contains("كم") || input.contains("tomorrow") || isWeatherContext)
+      ) {
+        return WeykyIntent.WeatherIntent(WeatherQueryType.WIND_TOMORROW, rawInput)
+      }
 
-    // "هل الجو مناسب للخروج الان؟"
-    if ((input.contains("الجو") || input.contains("الطقس") || isWeatherContext) &&
-      (input.contains("مناسب للخروج") || input.contains("اخرج") || input.contains("للخروج") || input.contains("طلعه"))
-    ) {
-      return WeykyIntent.WeatherIntent(WeatherQueryType.OUTDOOR_SUITABILITY, rawInput)
+      // "قارن بين طقس اليوم وغدا"
+      if (input.contains("قارن") || input.contains("مقارنه") || (input.contains("اليوم") && (input.contains("غدا") || input.contains("وغدا") || input.contains("بكره")))) {
+        if (input.contains("طقس") || hasWord(input, "جو", "الجو") || isWeatherContext) {
+          return WeykyIntent.WeatherIntent(WeatherQueryType.COMPARE_TOMORROW, rawInput)
+        }
+      }
+
+      // "متى اقرب احتمال للمطر هذا الاسبوع؟"
+      if ((input.contains("مطر") || input.contains("للمطر") || input.contains("الامطار") || hasWord(input, "rain", "raining", "rainy")) &&
+        (input.contains("اسبوع") || input.contains("الاسبوع") || input.contains("متي") || input.contains("week") || input.contains("اقرب") || input.contains("قادم"))
+      ) {
+        return WeykyIntent.WeatherIntent(WeatherQueryType.WEEK_RAIN, rawInput)
+      }
+
+      // "هل الجو مناسب للخروج الان؟"
+      if ((hasWord(input, "جو", "الجو") || input.contains("الطقس") || isWeatherContext) &&
+        (input.contains("مناسب للخروج") || input.contains("اخرج") || input.contains("للخروج") || input.contains("طلعه"))
+      ) {
+        return WeykyIntent.WeatherIntent(WeatherQueryType.OUTDOOR_SUITABILITY, rawInput)
+      }
     }
 
     val isForRingtone = input.contains("رنين") || input.contains("نغمه") || input.contains("مكالمات") || input.contains("ringtone") || input.contains("ring")
@@ -337,15 +383,45 @@ object IntentParser {
       return WeykyIntent.ContextualQueryIntent(rawQuery = rawInput, domain = req.domain)
     }
 
+    val isBatteryKnowledgeQuery = input.contains("حفاظ") || input.contains("الحفاظ") ||
+      input.contains("نصائح") || input.contains("نصايح") || input.contains("نصيحه") || input.contains("عمر البطاريه") ||
+      input.contains("اطاله") || input.contains("حمايه") || input.contains("توفير البطاريه") ||
+      input.contains("طرق توفير") || input.contains("كيف احافظ") || input.contains("صحه البطاريه") ||
+      input.contains("battery health") || input.contains("battery tips") ||
+      input.contains("battery lifespan") || input.contains("save battery") || input.contains("battery care")
+
+    val isHumanMemoryQuery = input.contains("ذاكرتي") || input.contains("بشريه") || input.contains("البشريه") ||
+      input.contains("تقويه") || input.contains("تنشيط") || input.contains("تحسين") ||
+      input.contains("نسيان") || input.contains("النسيان") || input.contains("حفظ") ||
+      input.contains("الدماغ") || input.contains("العقل") || input.contains("انسان") || input.contains("الانسان") ||
+      input.contains("شرب الماء") || input.contains("فوائد الماء") ||
+      input.contains("human memory") || input.contains("my memory") || input.contains("improve memory") || input.contains("brain")
+
+    val isEnglishFlashlightCommand = hasWord(input, "light") &&
+      (input.contains("turn on") || input.contains("turn off") || input.contains("switch on") ||
+       input.contains("switch off") || input.contains("toggle") || input.contains("enable") || input.contains("disable")) &&
+      !input.contains("speed of light") && !input.contains("blue light")
+
+    val isHistoricalOrScienceLightQuery = input.contains("سرعه الضوء") || input.contains("speed of light") ||
+      input.contains("من اخترع") || input.contains("تاريخ") || input.contains("اختراع") ||
+      input.contains("اديسون") || input.contains("كهربائي") || input.contains("who invented")
+
+    val isBiologicalOrKnowledgeDeviceQuery = input.contains("الجهاز الهضمي") || input.contains("الجهاز العصبي") ||
+      input.contains("الجهاز التنفسي") || input.contains("الجهاز المناعي") || input.contains("جهاز المناعه") ||
+      input.contains("الذكاء الاصطناعي") || input.contains("نوم") || input.contains("النوم") ||
+      isBatteryKnowledgeQuery
+
     return when {
       // 1. Settings, Wifi, Bluetooth commands
-      input.contains("wifi") || input.contains("wi-fi") || input.contains("واي فاي") || input.contains("الواي فاي") -> {
+      (input.contains("wifi") || input.contains("wi-fi") || input.contains("واي فاي") || input.contains("الواي فاي")) &&
+      !input.contains("ما هو") && !input.contains("كيف يعمل") -> {
         WeykyIntent.WifiIntent(openSettings = true)
       }
-      input.contains("bluetooth") || input.contains("بلوتوث") -> {
+      (input.contains("bluetooth") || input.contains("بلوتوث")) &&
+      !isBatteryKnowledgeQuery && !input.contains("ما هو") && !input.contains("كيف يعمل") -> {
         WeykyIntent.BluetoothIntent
       }
-      (input.contains("setting") || input.contains("اعدادات") || input.contains("الإعدادات") || (input.contains("ضبط") && !input.contains("صوت"))) && !input.startsWith("افتح ") && !input.startsWith("open ") -> {
+      (input.contains("setting") || input.contains("اعدادات") || input.contains("الإعدادات") || (input.contains("ضبط") && !input.contains("صوت") && !input.contains("ساعه البيولوجيه") && !input.contains("الساعه البيولوجيه"))) && !input.startsWith("افتح ") && !input.startsWith("open ") -> {
         when {
           input.contains("battery") || input.contains("بطاريه") || input.contains("البطاريه") -> WeykyIntent.SettingsIntent(WeykyIntent.SettingsType.BATTERY)
           input.contains("display") || input.contains("screen") || input.contains("شاشه") || input.contains("الشاشه") -> WeykyIntent.SettingsIntent(WeykyIntent.SettingsType.DISPLAY)
@@ -395,7 +471,7 @@ object IntentParser {
       }
 
       // 4. Volume / Audio with Incremental Steps & Percentage
-      input.contains("volume") || input.contains("audio") || input.contains("sound") || input.contains("صوت") || input.contains("الصوت") -> {
+      hasWord(input, "volume", "audio", "sound") || input.contains("صوت") || input.contains("الصوت") -> {
         val percent = extractVolumePercent(input)
         val stepCount = extractStepCount(input)
 
@@ -447,9 +523,10 @@ object IntentParser {
         }
       }
 
-      // 7. Battery
-      input.contains("battery") || input.contains("charge") || input.contains("charging") ||
-      input.contains("بطاريه") || input.contains("البطاريه") || input.contains("شحن") -> {
+      // 7. Battery (status & settings vs battery care knowledge)
+      (input.contains("battery") || hasWord(input, "charge", "charging") ||
+       input.contains("بطاريه") || input.contains("البطاريه") || input.contains("شحن")) &&
+      !isBatteryKnowledgeQuery -> {
         if (input.contains("setting") || input.contains("اعدادات") || input.contains("ضبط")) {
           WeykyIntent.SettingsIntent(WeykyIntent.SettingsType.BATTERY)
         } else {
@@ -458,22 +535,24 @@ object IntentParser {
       }
 
       // 8. Storage
-      input.contains("storage") || input.contains("disk") || input.contains("free space") || input.contains("space left") ||
-      input.contains("تخزين") || input.contains("مساحه") || input.contains("المساحه") -> {
+      input.contains("storage") || hasWord(input, "disk") || input.contains("free space") || input.contains("space left") ||
+      input.contains("تخزين") || (input.contains("مساحه") && !input.contains("مساحه المثلث") && !input.contains("مساحه الدائره")) -> {
         WeykyIntent.StorageIntent
       }
 
-      // 9. RAM
-      input.contains("ram") || input.contains("memory") || input.contains("ذاكره") || input.contains("الرام") -> {
+      // 9. RAM (device RAM vs human memory knowledge)
+      (hasWord(input, "ram") || input.contains("memory") || input.contains("ذاكره") || input.contains("الرام")) &&
+      !isHumanMemoryQuery -> {
         WeykyIntent.RamIntent
       }
 
-      // 10. Flashlight
-      input.contains("flashlight") || input.contains("torch") || (input.contains("light") && !input.contains("sun")) ||
-      input.contains("كشاف") || input.contains("فلاش") || input.contains("مصباح") -> {
-        val turnOff = input.contains("off") || input.contains("stop") || input.contains("disable") ||
+      // 10. Flashlight (hardware torch vs speed of light / science / history)
+      (input.contains("flashlight") || input.contains("torch") || isEnglishFlashlightCommand ||
+       input.contains("كشاف") || input.contains("فلاش") || input.contains("مصباح")) &&
+      !isHistoricalOrScienceLightQuery -> {
+        val turnOff = hasWord(input, "off", "stop", "disable") ||
           input.contains("اطفئ") || input.contains("أطفئ") || input.contains("ايقاف") || input.contains("طفي") || input.contains("اغلق")
-        val turnOn = input.contains("on") || input.contains("enable") || input.contains("start") ||
+        val turnOn = hasWord(input, "on", "enable", "start") ||
           input.contains("شغل") || input.contains("تشغيل") || input.contains("افتح") || input.contains("اضئ") || input.contains("ولع")
         if (turnOff) WeykyIntent.FlashlightIntent(turnOn = false)
         else if (turnOn) WeykyIntent.FlashlightIntent(turnOn = true)
@@ -487,33 +566,34 @@ object IntentParser {
         WeykyIntent.NotificationIntent(openSettings = openSettings)
       }
 
-      // 12. Weather General
-      input.contains("weather") || input.contains("forecast") || input.contains("rain") || input.contains("sunny") || input.contains("outside") ||
-      input.contains("طقس") || input.contains("الطقس") || input.contains("جو") || input.contains("امطار") || input.contains("حراره") -> {
+      // 12. Weather General (local weather vs remote travel weather or body/phone heat)
+      !isRemotePlaceWeather &&
+      !input.contains("حراره الجسم") && !input.contains("حراره الهاتف") && !isBatteryKnowledgeQuery &&
+      (input.contains("weather") || input.contains("forecast") || hasWord(input, "rain", "raining", "rainy", "sunny", "outside") ||
+       input.contains("طقس") || input.contains("الطقس") || hasWord(input, "جو", "الجو") || input.contains("امطار") || input.contains("حراره")) -> {
         WeykyIntent.WeatherIntent(WeatherQueryType.CURRENT, rawInput)
       }
 
-      // 13. Time and Date
-      input.contains("time") || input.contains("clock") || input.contains("date") || input.contains("today") ||
-      input.contains("وقت") || input.contains("ساعه") || input.contains("تاريخ") || input.contains("اليوم") -> {
+      // 13. Time and Date (current clock/date vs time management or history)
+      isClockOrDateQuery(input) -> {
         WeykyIntent.TimeIntent
       }
 
       // 14. Context
-      input.contains("context") || input.contains("where am i") || input.contains("in pocket") || input.contains("on table") ||
+      hasWord(input, "context") || input.contains("where am i") || input.contains("in pocket") || input.contains("on table") ||
       input.contains("سياق") || ((input.contains("وضع") || input.contains("حاله") || input.contains("اين")) && (input.contains("هاتف") || input.contains("جيب") || input.contains("طاوله"))) -> {
         WeykyIntent.ContextIntent
       }
 
       // 15. Device specs
-      input.contains("device") || input.contains("phone") || input.contains("status") || input.contains("specs") || input.contains("info") ||
-      input.contains("جهاز") || input.contains("هاتف") || input.contains("مواصفات") -> {
+      !isBiologicalOrKnowledgeDeviceQuery &&
+      (hasWord(input, "device", "phone", "status", "specs") || input.contains("device info") || input.contains("phone info") ||
+       input.contains("جهاز") || input.contains("هاتف") || input.contains("مواصفات")) -> {
         WeykyIntent.DeviceInfoIntent
       }
 
-      // 16. Help
-      input.contains("help") || input.contains("what can you do") || input.contains("features") || input.contains("hello") || input.contains("hi") ||
-      input.contains("مساعده") || input.contains("ماذا تستطيع") || input.contains("مرحبا") || input.contains("اهلا") || input.contains("اوامر") -> {
+      // 16. Help (command list requests)
+      input == "help" || input == "commands" || input == "اوامر" || input == "الاوامر" || input.contains("قائمه الاوامر") -> {
         WeykyIntent.HelpIntent
       }
 
