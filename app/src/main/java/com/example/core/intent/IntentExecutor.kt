@@ -15,6 +15,7 @@ import com.example.core.intent.handlers.WeatherActionHandler
 import com.example.core.intelligence.conversation.ActionableOption
 import com.example.core.intelligence.conversation.LocalConversationalEngine
 import com.example.core.intelligence.conversation.PendingExpectation
+import com.example.core.intelligence.knowledge.repository.KnowledgeRepository
 import com.example.device.info.DeviceInfoProvider
 import com.example.rendering.visual_state.CoreVisualState
 import java.text.SimpleDateFormat
@@ -35,14 +36,18 @@ class IntentExecutor(
   private val settingsActionHandler: SettingsActionHandler,
   private val contextActionHandler: ContextActionHandler,
   private val localConversationalEngine: LocalConversationalEngine? = null,
-  private val deviceInfoProvider: DeviceInfoProvider? = null
+  private val deviceInfoProvider: DeviceInfoProvider? = null,
+  val knowledgeRepository: KnowledgeRepository = localConversationalEngine?.knowledgeRepository ?: KnowledgeRepository.getDefaultInstance()
 ) {
 
   private val fallbackSession: com.example.core.intelligence.conversation.ConversationSession by lazy {
-    com.example.core.intelligence.conversation.ConversationSession()
+    com.example.core.intelligence.conversation.ConversationSession(knowledgeRepository = knowledgeRepository)
   }
   private val fallbackReasoner: com.example.core.intelligence.conversation.ConversationalReasoner by lazy {
-    com.example.core.intelligence.conversation.ConversationalReasoner(deviceInfoProvider)
+    com.example.core.intelligence.conversation.ConversationalReasoner(
+      deviceInfoProvider = deviceInfoProvider,
+      knowledgeRepository = knowledgeRepository
+    )
   }
   private val fallbackLock = Any()
 

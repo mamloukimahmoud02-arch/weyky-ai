@@ -239,10 +239,13 @@ class WeykyViewModel(application: Application) : AndroidViewModel(application) {
     batteryProvider = batteryProvider
   )
 
+  val knowledgeRepository = com.example.core.intelligence.knowledge.repository.KnowledgeRepository.getInstance(context)
+
   val localConversationalEngine = com.example.core.intelligence.conversation.LocalConversationalEngine(
     situationSnapshotBuilder = situationSnapshotBuilder,
     deviceInfoProvider = deviceInfoProvider,
-    contextReasoningEngine = contextReasoningEngine
+    contextReasoningEngine = contextReasoningEngine,
+    knowledgeRepository = knowledgeRepository
   )
 
   private val intentExecutor = IntentExecutor(
@@ -259,7 +262,8 @@ class WeykyViewModel(application: Application) : AndroidViewModel(application) {
     settingsActionHandler = settingsActionHandler,
     contextActionHandler = contextActionHandler,
     localConversationalEngine = localConversationalEngine,
-    deviceInfoProvider = deviceInfoProvider
+    deviceInfoProvider = deviceInfoProvider,
+    knowledgeRepository = knowledgeRepository
   )
 
   // Voice Recognition Pipeline
@@ -376,6 +380,7 @@ class WeykyViewModel(application: Application) : AndroidViewModel(application) {
     refreshLauncherStatus()
     voicePipeline.prewarmInstalledOfflineModelAsync()
     viewModelScope.launch {
+      knowledgeRepository.initializeSeedAndWarmUpIndex()
       appResolver.warmUpIndex()
       refreshInstalledApps()
     }

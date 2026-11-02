@@ -1,5 +1,8 @@
 package com.example.core.intelligence.conversation
 
+import com.example.core.intelligence.knowledge.context.KnowledgeAvailabilityStatus
+import com.example.core.intelligence.knowledge.context.PreparedTurnKnowledgeContext
+import com.example.core.intelligence.knowledge.repository.KnowledgeRepository
 import com.example.device.info.DeviceInfoProvider
 import java.util.Locale
 
@@ -10,24 +13,30 @@ import java.util.Locale
  */
 class ConversationalReasoner(
   private val deviceInfoProvider: DeviceInfoProvider? = null,
-  private val timeProvider: com.example.core.intelligence.time.TimeProvider = com.example.core.intelligence.time.SystemTimeProvider()
+  private val timeProvider: com.example.core.intelligence.time.TimeProvider = com.example.core.intelligence.time.SystemTimeProvider(),
+  val knowledgeRepository: KnowledgeRepository = KnowledgeRepository.getDefaultInstance()
 ) {
   private val batteryForecastCalculator = com.example.core.intelligence.battery.BatteryForecastCalculator(timeProvider)
+
+  @Volatile
+  var lastPreparedKnowledgeContext: PreparedTurnKnowledgeContext? = null
+    private set
 
   data class ReasoningResult(
     val replyText: String,
     val topicDetected: String?,
-    val proactiveSuggestions: List<ActionableOption>
+    val proactiveSuggestions: List<ActionableOption>,
+    val preparedKnowledgeContext: PreparedTurnKnowledgeContext? = null
   )
 
   fun reason(
     userQuery: String,
-    session: ConversationSession
+    session: ConversationSession,
+    preparedContext: PreparedTurnKnowledgeContext? = null
   ): ReasoningResult {
     val hasArabicChars = userQuery.any { it in '\u0600'..'\u06FF' }
-    val isArabic = hasArabicChars || Locale.getDefault().language.startsWith("ar")
+    val isArabic = preparedContext?.isArabic ?: (hasArabicChars || Locale.getDefault().language.startsWith("ar"))
     val query = userQuery.trim()
-    val normalized = LocalKnowledgeBase.normalizeArabic(query)
 
     // 1. Math and Calculation Check
     val mathResult = LocalKnowledgeBase.evaluateArithmetic(query)
@@ -39,15 +48,26 @@ class ConversationalReasoner(
         proactiveSuggestions = listOf(
           ActionableOption(if (isArabic) "عملية أخرى" else "Another calculation", "احسب 50 * 12"),
           ActionableOption(if (isArabic) "حالة الذاكرة" else "Memory status", "الذاكرة")
-        )
+        ),
+        preparedKnowledgeContext = preparedContext
       )
     }
 
+    // Prepare turn-scoped knowledge context once per turn (zero duplicate searches or normalizations)
+    val turnContext = preparedContext ?: knowledgeRepository.prepareTurnKnowledgeContext(
+      userQuery = query,
+      currentTopicId = session.currentTopic,
+      isArabicOverride = isArabic
+    )
+    lastPreparedKnowledgeContext = turnContext
+    val normalized = turnContext.relaxedNormalizedQuery
+
     // 1.5 Explicit Return to an Earlier Topic in Session History (e.g., "نعود إلى موضوع الفيزياء")
-    val explicitReturnTopicId = session.resolveExplicitTopicReturn(query)
+    val explicitReturnTopicId = session.resolveExplicitTopicReturn(query, turnContext)
     if (explicitReturnTopicId != null) {
       session.updateTopic(explicitReturnTopicId)
-      val kbTopic = LocalKnowledgeBase.getTopicById(explicitReturnTopicId)
+      val kbTopic = turnContext.getTopicById(explicitReturnTopicId)
+        ?: knowledgeRepository.getTopicById(explicitReturnTopicId)
       if (kbTopic != null) {
         val followUpElab = LocalKnowledgeBase.getTopicFollowUpElaboration(explicitReturnTopicId, normalized, isArabic)
         val baseText = if (followUpElab != null && !session.hasDeliveredElaboration(explicitReturnTopicId, followUpElab.first)) {
@@ -60,17 +80,18 @@ class ConversationalReasoner(
         return ReasoningResult(
           replyText = prefix + baseText,
           topicDetected = kbTopic.id,
-          proactiveSuggestions = kbTopic.suggestedFollowUps
+          proactiveSuggestions = kbTopic.suggestedFollowUps,
+          preparedKnowledgeContext = turnContext
         )
       }
     }
 
     // 2. Multi-turn Follow-up Resolution (evaluated BEFORE updating currentTopic to a new topic)
-    if (isFollowUpQuery(normalized, query, session)) {
-      val resolvedFollowUp = resolveFollowUp(normalized, session, isArabic)
+    if (isFollowUpQuery(normalized, session, turnContext)) {
+      val resolvedFollowUp = resolveFollowUp(normalized, session, isArabic, turnContext)
       if (resolvedFollowUp != null) {
         session.updateTopic(resolvedFollowUp.topicDetected)
-        return resolvedFollowUp
+        return resolvedFollowUp.copy(preparedKnowledgeContext = turnContext)
       }
     }
 
@@ -89,7 +110,8 @@ class ConversationalReasoner(
         proactiveSuggestions = listOf(
           ActionableOption(if (isArabic) "ما هو هاتفي؟" else "Phone model?", "ما هو هاتفي؟"),
           ActionableOption(if (isArabic) "ماذا تعرف عن جهازي؟" else "About my phone?", "ماذا تعرف عن هاتفي؟")
-        )
+        ),
+        preparedKnowledgeContext = turnContext
       )
     }
 
@@ -108,7 +130,8 @@ class ConversationalReasoner(
         proactiveSuggestions = listOf(
           ActionableOption(if (isArabic) "وماذا تعرف عنه؟" else "What else?", "وماذا تعرف عنه؟"),
           ActionableOption(if (isArabic) "البطارية" else "Battery", "كم نسبة البطارية؟")
-        )
+        ),
+        preparedKnowledgeContext = turnContext
       )
     }
 
@@ -126,41 +149,43 @@ class ConversationalReasoner(
         proactiveSuggestions = listOf(
           ActionableOption(if (isArabic) "البطارية" else "Battery", "البطارية"),
           ActionableOption(if (isArabic) "الذاكرة" else "RAM usage", "الذاكرة")
-        )
+        ),
+        preparedKnowledgeContext = turnContext
       )
     }
 
     // 5. Greetings & Chitchat
     val greetingReply = handleGreetingsAndChitchat(normalized, isArabic)
     if (greetingReply != null) {
-      return greetingReply
+      return greetingReply.copy(preparedKnowledgeContext = turnContext)
     }
 
     // 6. Emotional Empathy & Mood Support
     val empathyReply = handleEmotionalSupport(normalized, isArabic)
     if (empathyReply != null) {
-      return empathyReply
+      return empathyReply.copy(preparedKnowledgeContext = turnContext)
     }
 
-    // 7. Direct Curated Knowledge Base Match
-    val kbTopic = LocalKnowledgeBase.findMatchingTopic(query, session.currentTopic)
-    if (kbTopic != null) {
-      val specificCapitalText = if (kbTopic.id == "capitals_arab") {
-        LocalKnowledgeBase.resolveSpecificCapitalAnswer(query, isArabic)
-      } else {
-        null
-      }
-      val text = specificCapitalText ?: if (isArabic) kbTopic.arabicSummary else kbTopic.englishSummary
+    // 7. Direct Curated Knowledge Base Match via PreparedTurnKnowledgeContext
+    val kbTopic = turnContext.retrievedTopic
+    val matchedResponseText = turnContext.resolveMatchedResponseText()
+    if (kbTopic != null &&
+      turnContext.availabilityStatus == KnowledgeAvailabilityStatus.MATCHED_USABLE_KNOWLEDGE &&
+      !matchedResponseText.isNullOrBlank()
+    ) {
       session.updateTopic(kbTopic.id, kbTopic.id)
       return ReasoningResult(
-        replyText = text,
+        replyText = matchedResponseText,
         topicDetected = kbTopic.id,
-        proactiveSuggestions = kbTopic.suggestedFollowUps
+        proactiveSuggestions = kbTopic.suggestedFollowUps,
+        preparedKnowledgeContext = turnContext
       )
     }
 
     // 8. Principled Decision & Honest Fallback without Canned Deception
-    return generatePrincipledResponse(query, normalized, isArabic)
+    return generatePrincipledResponse(query, normalized, isArabic).copy(
+      preparedKnowledgeContext = turnContext
+    )
   }
 
   private fun isUserIdentityQuery(query: String): Boolean {
@@ -191,7 +216,11 @@ class ConversationalReasoner(
     return false
   }
 
-  private fun isFollowUpQuery(query: String, rawQuery: String, session: ConversationSession): Boolean {
+  private fun isFollowUpQuery(
+    query: String,
+    session: ConversationSession,
+    turnContext: PreparedTurnKnowledgeContext
+  ): Boolean {
     if (session.lastBatteryScenario != null && (query.contains("ملاحه") || query.contains("خرائط") || query.contains("navigation") || query.contains("gps"))) {
       return true
     }
@@ -207,10 +236,11 @@ class ConversationalReasoner(
       query.contains("عنه") || query.contains("عنها") || query.contains("ذلك") ||
       query.contains("زيارتها") || query.contains("رويتها") || query.contains("رؤيتها") || query.contains("نراها") ||
       query.contains("تتكون") || query.contains("تتشكل") ||
-      query.contains("there") || query.contains("that") || query.contains("about it") || query.contains("see them")
+      query.contains("there") || query.contains("that") || query.contains("about it") || query.contains("see them") ||
+      query.split(" ").contains("its")
 
     // Check if the user is explicitly asking about a DIFFERENT indexed knowledge topic without back-reference pronouns
-    val matchedNewTopic = LocalKnowledgeBase.findMatchingTopic(rawQuery, null)
+    val matchedNewTopic = turnContext.unbiasedTopTopic
     if (matchedNewTopic != null && !isSameTopicFamily(activeTopic, matchedNewTopic.id) && !hasBackReferenceMarker) {
       return false
     }
@@ -238,13 +268,14 @@ class ConversationalReasoner(
       "tell me more", "and how", "what about", "elaborate", "can you give more details", "explain"
     )
 
-    return hasBackReferenceMarker || followUpStarters.any { query.startsWith(it) }
+    return hasBackReferenceMarker || followUpStarters.any { query.startsWith(it) || query.contains(" $it") }
   }
 
   private fun resolveFollowUp(
     query: String,
     session: ConversationSession,
-    isArabic: Boolean
+    isArabic: Boolean,
+    turnContext: PreparedTurnKnowledgeContext
   ): ReasoningResult? {
     // 0. Battery scenario follow-up: "وماذا لو استخدمت الملاحة أيضًا؟"
     if (session.lastBatteryScenario != null && (query.contains("ملاحه") || query.contains("خرائط") || query.contains("navigation") || query.contains("gps"))) {
@@ -283,6 +314,21 @@ class ConversationalReasoner(
       }
     }
 
+    // Contextual transition when user is in capitals_arab (e.g. Oman capital) and asks "What about its tourism?"
+    if (topic == "capitals_arab" && turnContext.retrievedTopicId == "salalah_tourism") {
+      val tourismTopic = turnContext.retrievedTopic ?: turnContext.getTopicById("salalah_tourism")
+      if (tourismTopic != null) {
+        val text = if (isArabic) tourismTopic.arabicSummary else tourismTopic.englishSummary
+        if (text.isNotBlank()) {
+          return ReasoningResult(
+            replyText = text,
+            topicDetected = tourismTopic.id,
+            proactiveSuggestions = tourismTopic.suggestedFollowUps
+          )
+        }
+      }
+    }
+
     // Resolve follow-ups across all curated KnowledgeBase topics (including travel/salalah_tourism, sleep_wellness, physics_universe, etc.)
     val elaboration = LocalKnowledgeBase.getTopicFollowUpElaboration(topic, query, isArabic)
     if (elaboration != null) {
@@ -291,7 +337,8 @@ class ConversationalReasoner(
         "health_wellness" -> "sleep_wellness"
         else -> topic
       }
-      val kbTopic = LocalKnowledgeBase.getTopicById(canonicalTopic)
+      val kbTopic = turnContext.getTopicById(canonicalTopic)
+        ?: knowledgeRepository.getTopicById(canonicalTopic)
       val suggestions = elaboration.second.ifEmpty { kbTopic?.suggestedFollowUps ?: emptyList() }
 
       if (session.hasDeliveredElaboration(canonicalTopic, elaboration.first)) {

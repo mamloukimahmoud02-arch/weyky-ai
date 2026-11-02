@@ -1,5 +1,8 @@
 package com.example.core.intelligence.conversation
 
+import com.example.core.intelligence.knowledge.context.PreparedTurnKnowledgeContext
+import com.example.core.intelligence.knowledge.repository.KnowledgeRepository
+
 /**
  * Indicates if the assistant is awaiting specific follow-up information from the user.
  */
@@ -13,7 +16,10 @@ enum class PendingExpectation {
  * Manages in-memory dialogue session history, tracking user/assistant turns,
  * current focus topic, mentioned entities, pending expectations, and context for multi-turn reasoning.
  */
-class ConversationSession(private val maxTurns: Int = 20) {
+class ConversationSession(
+  private val maxTurns: Int = 20,
+  val knowledgeRepository: KnowledgeRepository = KnowledgeRepository.getDefaultInstance()
+) {
   private val _turns = mutableListOf<ConversationTurn>()
   val turns: List<ConversationTurn> get() = _turns.toList()
 
@@ -113,9 +119,14 @@ class ConversationSession(private val maxTurns: Int = 20) {
 
   /**
    * Resolves an explicit user request to return to an earlier topic in the session history.
+   * When [preparedContext] is supplied, reuses its normalized query, unbiased match, and
+   * pinned snapshot without performing redundant normalizations or searches.
    */
-  fun resolveExplicitTopicReturn(rawQuery: String): String? {
-    val norm = LocalKnowledgeBase.normalizeArabic(rawQuery)
+  fun resolveExplicitTopicReturn(
+    rawQuery: String,
+    preparedContext: PreparedTurnKnowledgeContext? = null
+  ): String? {
+    val norm = preparedContext?.relaxedNormalizedQuery ?: LocalKnowledgeBase.normalizeArabic(rawQuery)
     val hasReturnMarker = norm.contains("نعود") || norm.contains("عوده") || norm.contains("العوده") ||
       norm.contains("نرجع") || norm.contains("ارجع") || norm.contains("رجوع") ||
       norm.contains("بالعوده") || norm.contains("عد الي") || norm.contains("عد لموضوع") ||
@@ -127,7 +138,11 @@ class ConversationSession(private val maxTurns: Int = 20) {
     if (!hasReturnMarker) return null
 
     // 1. Check if the query names a specific topic that exists in topicHistory or previousTopic
-    val matchedTopic = LocalKnowledgeBase.findMatchingTopic(rawQuery, null)?.id
+    val matchedTopic = if (preparedContext != null) {
+      preparedContext.unbiasedTopTopicId ?: preparedContext.retrievedTopicId
+    } else {
+      knowledgeRepository.findMatchingTopic(rawQuery, null)?.id
+    }
     if (matchedTopic != null && (_topicHistory.contains(matchedTopic) || previousTopic == matchedTopic)) {
       return matchedTopic
     }
@@ -135,7 +150,8 @@ class ConversationSession(private val maxTurns: Int = 20) {
     // 2. Check category/domain aliases in topicHistory (e.g. "نعود إلى الفيزياء" -> "physics_universe")
     for (historyTopicId in _topicHistory.reversed()) {
       if (historyTopicId == currentTopic && _topicHistory.size > 1) continue
-      val kbTopic = LocalKnowledgeBase.getTopicById(historyTopicId)
+      val kbTopic = preparedContext?.getTopicById(historyTopicId)
+        ?: knowledgeRepository.getTopicById(historyTopicId)
       if (kbTopic != null) {
         val matchesAlias = (kbTopic.id == "physics_universe" && (norm.contains("فيزياء") || norm.contains("الفيزياء") || norm.contains("فضاء") || norm.contains("الفضاء") || norm.contains("كون") || norm.contains("physics") || norm.contains("space"))) ||
           (kbTopic.id == "capitals_arab" && (norm.contains("جغرافيا") || norm.contains("الجغرافيا") || norm.contains("عواصم") || norm.contains("العواصم") || norm.contains("geography") || norm.contains("capitals"))) ||
@@ -254,7 +270,7 @@ class ConversationSession(private val maxTurns: Int = 20) {
         updateTopic("calculation")
       }
       else -> {
-        val kbMatch = LocalKnowledgeBase.findMatchingTopic(text, null)
+        val kbMatch = knowledgeRepository.findMatchingTopic(text, null)
         if (kbMatch != null) {
           updateTopic(kbMatch.id, kbMatch.id)
         }

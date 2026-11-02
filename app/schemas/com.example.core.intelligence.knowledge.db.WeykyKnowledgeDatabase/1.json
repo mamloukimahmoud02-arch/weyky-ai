@@ -1,0 +1,641 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "817f29cf67326fb2db9db3b30c9cb2a4",
+    "entities": [
+      {
+        "tableName": "knowledge_pack_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pack_id` TEXT NOT NULL, `source_type` TEXT NOT NULL, `pack_version` INTEGER NOT NULL, `schema_version` INTEGER NOT NULL, `sha256_checksum` TEXT NOT NULL, `pack_priority` INTEGER NOT NULL, `imported_at` INTEGER NOT NULL, `topic_count` INTEGER NOT NULL, PRIMARY KEY(`pack_id`))",
+        "fields": [
+          {
+            "fieldPath": "packId",
+            "columnName": "pack_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "source_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packVersion",
+            "columnName": "pack_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schema_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256Checksum",
+            "columnName": "sha256_checksum",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packPriority",
+            "columnName": "pack_priority",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "imported_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "topicCount",
+            "columnName": "topic_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pack_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "idx_packs_source_priority",
+            "unique": false,
+            "columnNames": [
+              "source_type",
+              "pack_priority"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_packs_source_priority` ON `${TABLE_NAME}` (`source_type`, `pack_priority`)"
+          }
+        ]
+      },
+      {
+        "tableName": "knowledge_topics",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`topic_id` TEXT NOT NULL, `pack_id` TEXT NOT NULL, `topic_order_index` INTEGER NOT NULL, `arabic_summary` TEXT NOT NULL, `english_summary` TEXT NOT NULL, `suggested_follow_ups_json` TEXT NOT NULL, `source_type` TEXT NOT NULL, `pack_priority` INTEGER NOT NULL, `content_version` INTEGER NOT NULL, `is_core_topic` INTEGER NOT NULL, `is_active_winner` INTEGER NOT NULL, PRIMARY KEY(`topic_id`, `pack_id`), FOREIGN KEY(`pack_id`) REFERENCES `knowledge_pack_metadata`(`pack_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "topicId",
+            "columnName": "topic_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packId",
+            "columnName": "pack_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "topicOrderIndex",
+            "columnName": "topic_order_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "arabicSummary",
+            "columnName": "arabic_summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "englishSummary",
+            "columnName": "english_summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suggestedFollowUpsJson",
+            "columnName": "suggested_follow_ups_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "source_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packPriority",
+            "columnName": "pack_priority",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentVersion",
+            "columnName": "content_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isCoreTopic",
+            "columnName": "is_core_topic",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActiveWinner",
+            "columnName": "is_active_winner",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "topic_id",
+            "pack_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "idx_topics_pack_id",
+            "unique": false,
+            "columnNames": [
+              "pack_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_topics_pack_id` ON `${TABLE_NAME}` (`pack_id`)"
+          },
+          {
+            "name": "idx_topics_active_lookup",
+            "unique": false,
+            "columnNames": [
+              "topic_id",
+              "is_active_winner"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_topics_active_lookup` ON `${TABLE_NAME}` (`topic_id`, `is_active_winner`)"
+          },
+          {
+            "name": "idx_topics_active_order",
+            "unique": false,
+            "columnNames": [
+              "is_active_winner",
+              "topic_order_index"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_topics_active_order` ON `${TABLE_NAME}` (`is_active_winner`, `topic_order_index`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "knowledge_pack_metadata",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "pack_id"
+            ],
+            "referencedColumns": [
+              "pack_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "knowledge_keywords",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`keyword_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `topic_id` TEXT NOT NULL, `pack_id` TEXT NOT NULL, `keyword_order` INTEGER NOT NULL, `original_keyword` TEXT NOT NULL, `strict_normalized_phrase` TEXT NOT NULL, `relaxed_normalized_phrase` TEXT NOT NULL, `relaxed_char_length` INTEGER NOT NULL, `token_count` INTEGER NOT NULL, `content_token_count` INTEGER NOT NULL, `match_type` TEXT NOT NULL, `language` TEXT NOT NULL, FOREIGN KEY(`topic_id`, `pack_id`) REFERENCES `knowledge_topics`(`topic_id`, `pack_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "keywordId",
+            "columnName": "keyword_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "topicId",
+            "columnName": "topic_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packId",
+            "columnName": "pack_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keywordOrder",
+            "columnName": "keyword_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalKeyword",
+            "columnName": "original_keyword",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strictNormalizedPhrase",
+            "columnName": "strict_normalized_phrase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relaxedNormalizedPhrase",
+            "columnName": "relaxed_normalized_phrase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relaxedCharLength",
+            "columnName": "relaxed_char_length",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenCount",
+            "columnName": "token_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentTokenCount",
+            "columnName": "content_token_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchType",
+            "columnName": "match_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "keyword_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "idx_keywords_topic_pack_order",
+            "unique": true,
+            "columnNames": [
+              "topic_id",
+              "pack_id",
+              "keyword_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `idx_keywords_topic_pack_order` ON `${TABLE_NAME}` (`topic_id`, `pack_id`, `keyword_order`)"
+          },
+          {
+            "name": "idx_keywords_strict_phrase",
+            "unique": false,
+            "columnNames": [
+              "strict_normalized_phrase"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_keywords_strict_phrase` ON `${TABLE_NAME}` (`strict_normalized_phrase`)"
+          },
+          {
+            "name": "idx_keywords_relaxed_phrase",
+            "unique": false,
+            "columnNames": [
+              "relaxed_normalized_phrase"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_keywords_relaxed_phrase` ON `${TABLE_NAME}` (`relaxed_normalized_phrase`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "knowledge_topics",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "topic_id",
+              "pack_id"
+            ],
+            "referencedColumns": [
+              "topic_id",
+              "pack_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "knowledge_keyword_tokens",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`token_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyword_id` INTEGER NOT NULL, `token_position` INTEGER NOT NULL, `strict_token` TEXT NOT NULL, `strict_stem` TEXT NOT NULL, `relaxed_token` TEXT NOT NULL, `relaxed_stem` TEXT NOT NULL, FOREIGN KEY(`keyword_id`) REFERENCES `knowledge_keywords`(`keyword_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "tokenId",
+            "columnName": "token_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keywordId",
+            "columnName": "keyword_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenPosition",
+            "columnName": "token_position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strictToken",
+            "columnName": "strict_token",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strictStem",
+            "columnName": "strict_stem",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relaxedToken",
+            "columnName": "relaxed_token",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relaxedStem",
+            "columnName": "relaxed_stem",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "token_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "idx_kw_tokens_keyword_pos",
+            "unique": true,
+            "columnNames": [
+              "keyword_id",
+              "token_position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `idx_kw_tokens_keyword_pos` ON `${TABLE_NAME}` (`keyword_id`, `token_position`)"
+          },
+          {
+            "name": "idx_kw_tokens_strict_token",
+            "unique": false,
+            "columnNames": [
+              "strict_token"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_kw_tokens_strict_token` ON `${TABLE_NAME}` (`strict_token`)"
+          },
+          {
+            "name": "idx_kw_tokens_strict_stem",
+            "unique": false,
+            "columnNames": [
+              "strict_stem"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_kw_tokens_strict_stem` ON `${TABLE_NAME}` (`strict_stem`)"
+          },
+          {
+            "name": "idx_kw_tokens_relaxed_token",
+            "unique": false,
+            "columnNames": [
+              "relaxed_token"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_kw_tokens_relaxed_token` ON `${TABLE_NAME}` (`relaxed_token`)"
+          },
+          {
+            "name": "idx_kw_tokens_relaxed_stem",
+            "unique": false,
+            "columnNames": [
+              "relaxed_stem"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `idx_kw_tokens_relaxed_stem` ON `${TABLE_NAME}` (`relaxed_stem`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "knowledge_keywords",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "keyword_id"
+            ],
+            "referencedColumns": [
+              "keyword_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "knowledge_topic_details",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`topic_id` TEXT NOT NULL, `pack_id` TEXT NOT NULL, `detailed_arabic` TEXT NOT NULL, `detailed_english` TEXT NOT NULL, `related_topic_ids_json` TEXT NOT NULL, `examples_json` TEXT NOT NULL, `last_reviewed` INTEGER NOT NULL, `additional_content_json` TEXT, PRIMARY KEY(`topic_id`, `pack_id`), FOREIGN KEY(`topic_id`, `pack_id`) REFERENCES `knowledge_topics`(`topic_id`, `pack_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "topicId",
+            "columnName": "topic_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packId",
+            "columnName": "pack_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detailedArabic",
+            "columnName": "detailed_arabic",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detailedEnglish",
+            "columnName": "detailed_english",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relatedTopicIdsJson",
+            "columnName": "related_topic_ids_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "examplesJson",
+            "columnName": "examples_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastReviewed",
+            "columnName": "last_reviewed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "additionalContentJson",
+            "columnName": "additional_content_json",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "topic_id",
+            "pack_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "idx_details_topic_pack",
+            "unique": true,
+            "columnNames": [
+              "topic_id",
+              "pack_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `idx_details_topic_pack` ON `${TABLE_NAME}` (`topic_id`, `pack_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "knowledge_topics",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "topic_id",
+              "pack_id"
+            ],
+            "referencedColumns": [
+              "topic_id",
+              "pack_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "knowledge_followup_branches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`branch_id` TEXT NOT NULL, `topic_id` TEXT NOT NULL, `pack_id` TEXT NOT NULL, `priority_order` INTEGER NOT NULL, `match_mode` TEXT NOT NULL, `trigger_keywords_json` TEXT NOT NULL, `response_arabic` TEXT NOT NULL, `response_english` TEXT NOT NULL, `actionable_options_json` TEXT NOT NULL, `is_default` INTEGER NOT NULL, PRIMARY KEY(`branch_id`, `pack_id`), FOREIGN KEY(`topic_id`, `pack_id`) REFERENCES `knowledge_topics`(`topic_id`, `pack_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "branchId",
+            "columnName": "branch_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "topicId",
+            "columnName": "topic_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packId",
+            "columnName": "pack_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priorityOrder",
+            "columnName": "priority_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchMode",
+            "columnName": "match_mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerKeywordsJson",
+            "columnName": "trigger_keywords_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "responseArabic",
+            "columnName": "response_arabic",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "responseEnglish",
+            "columnName": "response_english",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actionableOptionsJson",
+            "columnName": "actionable_options_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "is_default",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "branch_id",
+            "pack_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "idx_followup_topic_pack_priority",
+            "unique": true,
+            "columnNames": [
+              "topic_id",
+              "pack_id",
+              "priority_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `idx_followup_topic_pack_priority` ON `${TABLE_NAME}` (`topic_id`, `pack_id`, `priority_order`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "knowledge_topics",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "topic_id",
+              "pack_id"
+            ],
+            "referencedColumns": [
+              "topic_id",
+              "pack_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '817f29cf67326fb2db9db3b30c9cb2a4')"
+    ]
+  }
+}
