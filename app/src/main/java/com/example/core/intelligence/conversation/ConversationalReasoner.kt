@@ -70,6 +70,12 @@ class ConversationalReasoner(
         ?: knowledgeRepository.getTopicById(explicitReturnTopicId)
       if (kbTopic != null) {
         val followUpElab = LocalKnowledgeBase.getTopicFollowUpElaboration(explicitReturnTopicId, normalized, isArabic)
+          ?: knowledgeRepository.resolveDynamicFollowUpElaboration(
+            topicId = explicitReturnTopicId,
+            query = normalized,
+            isArabic = isArabic,
+            snapshotOverride = turnContext.snapshotUsed
+          )
         val baseText = if (followUpElab != null && !session.hasDeliveredElaboration(explicitReturnTopicId, followUpElab.first)) {
           session.markElaborationDelivered(explicitReturnTopicId, followUpElab.first)
           followUpElab.first
@@ -262,6 +268,9 @@ class ConversationalReasoner(
     ) {
       return true
     }
+    if (knowledgeRepository.hasMatchingFollowUpBranchTrigger(activeTopic, query, turnContext.snapshotUsed)) {
+      return true
+    }
 
     val followUpStarters = listOf(
       "وماذا", "وكيف", "ولماذا", "طيب", "وما", "هل هناك", "وهل", "المزيد", "اكثر", "اشرح", "وضح", "حدثني عن",
@@ -330,7 +339,14 @@ class ConversationalReasoner(
     }
 
     // Resolve follow-ups across all curated KnowledgeBase topics (including travel/salalah_tourism, sleep_wellness, physics_universe, etc.)
+    // and fall back to lazy-loaded dynamic follow-up branches / detail sections for external pack topics.
     val elaboration = LocalKnowledgeBase.getTopicFollowUpElaboration(topic, query, isArabic)
+      ?: knowledgeRepository.resolveDynamicFollowUpElaboration(
+        topicId = topic,
+        query = query,
+        isArabic = isArabic,
+        snapshotOverride = turnContext.snapshotUsed
+      )
     if (elaboration != null) {
       val canonicalTopic = when (topic) {
         "travel" -> "salalah_tourism"

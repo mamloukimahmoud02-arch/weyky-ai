@@ -1,6 +1,8 @@
 package com.example.core.intelligence.knowledge.validation
 
+import com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog
 import com.example.core.intelligence.knowledge.db.converter.KnowledgeTypeConverters
+import com.example.core.intelligence.knowledge.db.dao.TopicStorageBundle
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeFollowUpBranchEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordTokenEntity
@@ -82,8 +84,60 @@ object KnowledgeValidator {
     )
 
     /**
+     * Validates a complete pack payload from [TopicStorageBundle]s, automatically assigning
+     * synthetic keyword/token IDs when `keywordId == 0L` prior to Room insertion and enforcing
+     * core seed protection rules when [enforceCoreTopicProtection] is true.
+     */
+    fun validatePackBundles(
+        pack: KnowledgePackMetadataEntity,
+        bundles: List<TopicStorageBundle>,
+        referenceTopicIds: Set<String>? = null,
+        enforceCoreTopicProtection: Boolean = true
+    ): ValidationResult {
+        val allHeaders = ArrayList<KnowledgeTopicHeaderEntity>(bundles.size)
+        val allKeywords = ArrayList<KnowledgeKeywordEntity>()
+        val allTokens = ArrayList<KnowledgeKeywordTokenEntity>()
+        val allDetails = ArrayList<KnowledgeTopicDetailEntity>()
+        val allBranches = ArrayList<KnowledgeFollowUpBranchEntity>()
+
+        var syntheticKeywordId = 1L
+        var syntheticTokenId = 1L
+
+        for (bundle in bundles) {
+            allHeaders.add(bundle.header)
+            for (kwWithTokens in bundle.keywordsWithTokens) {
+                val kwId = if (kwWithTokens.keyword.keywordId > 0L) {
+                    kwWithTokens.keyword.keywordId
+                } else {
+                    syntheticKeywordId++
+                }
+                allKeywords.add(kwWithTokens.keyword.copy(keywordId = kwId))
+                for (tok in kwWithTokens.tokens) {
+                    val tokId = if (tok.tokenId > 0L) tok.tokenId else syntheticTokenId++
+                    allTokens.add(tok.copy(tokenId = tokId, keywordId = kwId))
+                }
+            }
+            if (bundle.detail != null) {
+                allDetails.add(bundle.detail)
+            }
+            allBranches.addAll(bundle.followUpBranches)
+        }
+
+        return validatePackData(
+            pack = pack,
+            topics = allHeaders,
+            keywords = allKeywords,
+            tokens = allTokens,
+            details = allDetails,
+            followUpBranches = allBranches,
+            referenceTopicIds = referenceTopicIds,
+            enforceCoreTopicProtection = enforceCoreTopicProtection
+        )
+    }
+
+    /**
      * Validates a complete pack payload including all relational integrity constraints across
-     * tables 1 through 6.
+     * tables 1 through 6, plus optional core seed topic protection.
      */
     fun validatePackData(
         pack: KnowledgePackMetadataEntity,
@@ -92,7 +146,8 @@ object KnowledgeValidator {
         tokens: List<KnowledgeKeywordTokenEntity>,
         details: List<KnowledgeTopicDetailEntity>,
         followUpBranches: List<KnowledgeFollowUpBranchEntity>,
-        referenceTopicIds: Set<String>? = null
+        referenceTopicIds: Set<String>? = null,
+        enforceCoreTopicProtection: Boolean = true
     ): ValidationResult {
         val issues = mutableListOf<ValidationIssue>()
 
@@ -107,7 +162,27 @@ object KnowledgeValidator {
             )
         }
 
-        // 2. Validate Topic Headers & check duplicates / pack relations
+        val isCanonicalCoreSeedPack = pack.packId == SeedKnowledgeCatalog.CORE_SEED_PACK_ID
+        if (enforceCoreTopicProtection) {
+            if (isCanonicalCoreSeedPack && pack.sourceType != SeedKnowledgeCatalog.CORE_SEED_SOURCE_TYPE) {
+                issues += ValidationIssue(
+                    category = ValidationIssueCategory.VALIDATION_ERROR,
+                    field = "pack.sourceType",
+                    message = "Canonical core seed pack '${pack.packId}' must have sourceType '${SeedKnowledgeCatalog.CORE_SEED_SOURCE_TYPE}'.",
+                    recordIdentifier = pack.packId
+                )
+            }
+            if (!isCanonicalCoreSeedPack && pack.sourceType == SeedKnowledgeCatalog.CORE_SEED_SOURCE_TYPE) {
+                issues += ValidationIssue(
+                    category = ValidationIssueCategory.VALIDATION_ERROR,
+                    field = "pack.sourceType",
+                    message = "External pack '${pack.packId}' cannot claim SEED_BUILTIN ownership.",
+                    recordIdentifier = pack.packId
+                )
+            }
+        }
+
+        // 2. Validate Topic Headers & check duplicates / pack relations / core protection
         val seenTopicIdsInPack = mutableSetOf<String>()
         val validTopicKeys = mutableSetOf<Pair<String, String>>()
 
@@ -120,6 +195,32 @@ object KnowledgeValidator {
                     message = "Topic '${topic.topicId}' references packId '${topic.packId}' which does not match pack '${pack.packId}'.",
                     recordIdentifier = "${topic.topicId}@${topic.packId}"
                 )
+            }
+            if (enforceCoreTopicProtection && !isCanonicalCoreSeedPack) {
+                if (topic.isCoreTopic) {
+                    issues += ValidationIssue(
+                        category = ValidationIssueCategory.VALIDATION_ERROR,
+                        field = "topic.isCoreTopic",
+                        message = "External pack '${pack.packId}' cannot mark topic '${topic.topicId}' as isCoreTopic=true.",
+                        recordIdentifier = "${topic.topicId}@${topic.packId}"
+                    )
+                }
+                if (topic.sourceType == SeedKnowledgeCatalog.CORE_SEED_SOURCE_TYPE) {
+                    issues += ValidationIssue(
+                        category = ValidationIssueCategory.VALIDATION_ERROR,
+                        field = "topic.sourceType",
+                        message = "External pack '${pack.packId}' cannot use SEED_BUILTIN sourceType on topic '${topic.topicId}'.",
+                        recordIdentifier = "${topic.topicId}@${topic.packId}"
+                    )
+                }
+                if (SeedKnowledgeCatalog.isProtectedCoreTopicId(topic.topicId)) {
+                    issues += ValidationIssue(
+                        category = ValidationIssueCategory.VALIDATION_ERROR,
+                        field = "topic.topicId",
+                        message = "External pack '${pack.packId}' cannot override protected core seed topic '${topic.topicId}'.",
+                        recordIdentifier = "${topic.topicId}@${topic.packId}"
+                    )
+                }
             }
             if (topic.topicId.isNotBlank()) {
                 if (!seenTopicIdsInPack.add(topic.topicId)) {

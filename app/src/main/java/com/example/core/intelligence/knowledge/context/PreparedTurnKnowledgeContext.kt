@@ -1,6 +1,7 @@
 package com.example.core.intelligence.knowledge.context
 
 import com.example.core.intelligence.conversation.LocalKnowledgeBase
+import com.example.core.intelligence.knowledge.search.ActiveTopicIdentity
 import com.example.core.intelligence.knowledge.search.InMemorySearchSnapshot
 import com.example.core.intelligence.knowledge.search.ScoredTopicCandidate
 
@@ -35,12 +36,13 @@ enum class KnowledgeAvailabilityStatus {
 /**
  * Lightweight, immutable turn-scoped knowledge context prepared once per conversational turn.
  *
- * Designed for WEYKY Phase 2B.3 to:
+ * Designed for WEYKY Phase 2B.3 & Phase 2B.4.2A to:
  * 1. Avoid repeated Arabic/English query normalizations within the same turn.
  * 2. Avoid repeated calls to [com.example.core.intelligence.knowledge.search.KnowledgeSearchService]
  *    across explicit-return detection, follow-up topic-switch checks, and direct knowledge lookup.
  * 3. Guarantee single-turn snapshot consistency by pinning the [snapshotUsed] captured at turn start.
- * 4. Keep heavy encyclopedic details out of RAM until explicitly needed.
+ * 4. Keep heavy encyclopedic details out of RAM until explicitly needed, while pinning the exact
+ *    winning [ActiveTopicIdentity] (`topicId + packId + contentVersion`) for on-demand detail lookup.
  */
 data class PreparedTurnKnowledgeContext(
     val userQuery: String,
@@ -66,11 +68,27 @@ data class PreparedTurnKnowledgeContext(
     val snapshotUsed: InMemorySearchSnapshot? = null
 ) {
     /**
+     * The pinned [ActiveTopicIdentity] (`topicId + packId + contentVersion`) of [retrievedTopicId]
+     * in [snapshotUsed], ensuring on-demand detailed content lookup uses the exact active winner
+     * from this turn's snapshot generation.
+     */
+    val retrievedTopicIdentity: ActiveTopicIdentity?
+        get() = retrievedTopicId?.let { snapshotUsed?.activeTopicIdentitiesById?.get(it) }
+
+    /**
      * Looks up a topic by ID from the exact [snapshotUsed] captured at the start of this turn,
      * preserving single-turn snapshot consistency even if a background update occurs mid-turn.
      */
     fun getTopicById(topicId: String): LocalKnowledgeBase.KnowledgeTopic? {
         return snapshotUsed?.topicsById?.get(topicId)
+    }
+
+    /**
+     * Looks up the active winning [ActiveTopicIdentity] (`topicId + packId + contentVersion`) for
+     * [topicId] from the pinned [snapshotUsed] captured at the start of this turn.
+     */
+    fun getActiveTopicIdentity(topicId: String): ActiveTopicIdentity? {
+        return snapshotUsed?.activeTopicIdentitiesById?.get(topicId)
     }
 
     /**

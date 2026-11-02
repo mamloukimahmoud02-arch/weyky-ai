@@ -57,8 +57,13 @@ class LocalConversationalEngine(
     }
 
     // 2. Perform local conversational reasoning with multi-turn history and turn-scoped knowledge context
+    knowledgeRepository.preWarmTopicDetailIfNeeded(session.currentTopic)
     val result = reasoner.reason(query, session)
     session.recordAssistantTurn(result.replyText, result.proactiveSuggestions, result.topicDetected)
+    knowledgeRepository.preWarmTopicDetailIfNeeded(
+      topicId = result.topicDetected,
+      snapshotOverride = result.preparedKnowledgeContext?.snapshotUsed
+    )
 
     return ConversationalResponse(
       replyText = result.replyText,

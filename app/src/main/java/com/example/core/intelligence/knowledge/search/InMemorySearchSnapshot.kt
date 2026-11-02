@@ -89,15 +89,37 @@ class ReverseTokenIndex internal constructor(
 }
 
 /**
+ * Lightweight, immutable identity record of the winning active version for a topic in
+ * [InMemorySearchSnapshot].
+ *
+ * Ensures that on-demand detailed content and follow-up branch lookups are strictly
+ * bound to the exact `(topicId, packId, contentVersion)` that won active selection,
+ * preventing cross-pack or stale-version leakage.
+ */
+data class ActiveTopicIdentity(
+    val topicId: String,
+    val packId: String,
+    val contentVersion: Int,
+    val packPriority: Int,
+    val sourceType: String,
+    val isCoreTopic: Boolean
+) {
+    val compositeDetailKey: String
+        get() = "$topicId@$packId#v$contentVersion"
+}
+
+/**
  * Immutable in-memory search snapshot used for zero-I/O synchronous topic search.
  *
  * Contains only lightweight search metadata, topic headers ([LocalKnowledgeBase.KnowledgeTopic]),
- * pre-normalized keyword entries ([SnapshotKeywordEntry]), and the [ReverseTokenIndex].
+ * active winning identities ([ActiveTopicIdentity]), pre-normalized keyword entries
+ * ([SnapshotKeywordEntry]), and the [ReverseTokenIndex].
  * Never holds heavy encyclopedic full-text details or follow-up branch trees.
  */
 class InMemorySearchSnapshot private constructor(
     val knowledgeGeneration: Long,
     val topicsById: Map<String, LocalKnowledgeBase.KnowledgeTopic>,
+    val activeTopicIdentitiesById: Map<String, ActiveTopicIdentity>,
     val orderedTopicIds: List<String>,
     val orderedTopics: List<LocalKnowledgeBase.KnowledgeTopic>,
     val topicOrderIndex: Map<String, Int>,
@@ -107,6 +129,9 @@ class InMemorySearchSnapshot private constructor(
 ) {
     val topicCount: Int get() = orderedTopics.size
     val keywordCount: Int get() = keywordEntries.size
+
+    fun getActiveIdentity(topicId: String): ActiveTopicIdentity? =
+        activeTopicIdentitiesById[topicId]
 
     companion object {
 
@@ -125,6 +150,7 @@ class InMemorySearchSnapshot private constructor(
             val orderedTopics = ArrayList<LocalKnowledgeBase.KnowledgeTopic>(sortedEntries.size)
             val orderedIds = ArrayList<String>(sortedEntries.size)
             val topicsMap = LinkedHashMap<String, LocalKnowledgeBase.KnowledgeTopic>(sortedEntries.size)
+            val identitiesMap = LinkedHashMap<String, ActiveTopicIdentity>(sortedEntries.size)
             val orderIndexMap = LinkedHashMap<String, Int>(sortedEntries.size)
             val allKeywordEntries = ArrayList<SnapshotKeywordEntry>()
             val keywordsByTopic = LinkedHashMap<String, List<SnapshotKeywordEntry>>(sortedEntries.size)
@@ -134,6 +160,14 @@ class InMemorySearchSnapshot private constructor(
                 orderedTopics.add(legacyTopic)
                 orderedIds.add(entry.topicId)
                 topicsMap[entry.topicId] = legacyTopic
+                identitiesMap[entry.topicId] = ActiveTopicIdentity(
+                    topicId = entry.topicId,
+                    packId = SeedKnowledgeCatalog.CORE_SEED_PACK_ID,
+                    contentVersion = SeedKnowledgeCatalog.CORE_SEED_CONTENT_VERSION,
+                    packPriority = SeedKnowledgeCatalog.CORE_SEED_PACK_PRIORITY,
+                    sourceType = SeedKnowledgeCatalog.CORE_SEED_SOURCE_TYPE,
+                    isCoreTopic = true
+                )
                 orderIndexMap[entry.topicId] = denseTopicIdx
 
                 val topicKwEntries = ArrayList<SnapshotKeywordEntry>(entry.keywords.size)
@@ -156,6 +190,7 @@ class InMemorySearchSnapshot private constructor(
             return InMemorySearchSnapshot(
                 knowledgeGeneration = knowledgeGeneration,
                 topicsById = topicsMap.toMap(),
+                activeTopicIdentitiesById = identitiesMap.toMap(),
                 orderedTopicIds = orderedIds.toList(),
                 orderedTopics = orderedTopics.toList(),
                 topicOrderIndex = orderIndexMap.toMap(),
@@ -184,6 +219,7 @@ class InMemorySearchSnapshot private constructor(
             val orderedTopics = ArrayList<LocalKnowledgeBase.KnowledgeTopic>(sortedBundles.size)
             val orderedIds = ArrayList<String>(sortedBundles.size)
             val topicsMap = LinkedHashMap<String, LocalKnowledgeBase.KnowledgeTopic>(sortedBundles.size)
+            val identitiesMap = LinkedHashMap<String, ActiveTopicIdentity>(sortedBundles.size)
             val orderIndexMap = LinkedHashMap<String, Int>(sortedBundles.size)
             val allKeywordEntries = ArrayList<SnapshotKeywordEntry>()
             val keywordsByTopic = LinkedHashMap<String, List<SnapshotKeywordEntry>>(sortedBundles.size)
@@ -197,6 +233,14 @@ class InMemorySearchSnapshot private constructor(
                 orderedTopics.add(legacyTopic)
                 orderedIds.add(topicId)
                 topicsMap[topicId] = legacyTopic
+                identitiesMap[topicId] = ActiveTopicIdentity(
+                    topicId = topicId,
+                    packId = bundle.header.packId,
+                    contentVersion = bundle.header.contentVersion,
+                    packPriority = bundle.header.packPriority,
+                    sourceType = bundle.header.sourceType,
+                    isCoreTopic = bundle.header.isCoreTopic
+                )
                 orderIndexMap[topicId] = denseTopicIdx
 
                 val topicKwEntries = ArrayList<SnapshotKeywordEntry>(sortedKws.size)
@@ -262,6 +306,7 @@ class InMemorySearchSnapshot private constructor(
             return InMemorySearchSnapshot(
                 knowledgeGeneration = knowledgeGeneration,
                 topicsById = topicsMap.toMap(),
+                activeTopicIdentitiesById = identitiesMap.toMap(),
                 orderedTopicIds = orderedIds.toList(),
                 orderedTopics = orderedTopics.toList(),
                 topicOrderIndex = orderIndexMap.toMap(),

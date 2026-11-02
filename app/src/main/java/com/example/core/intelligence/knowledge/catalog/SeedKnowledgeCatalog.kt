@@ -272,6 +272,16 @@ object SeedKnowledgeCatalog {
         coreTopics.map { it.topicId }
 
     /**
+     * Immutable set of the 11 protected core seed topic IDs that external knowledge packs
+     * must never override or claim ownership of.
+     */
+    val PROTECTED_CORE_TOPIC_IDS: Set<String> =
+        coreTopicsById.keys
+
+    fun isProtectedCoreTopicId(topicId: String): Boolean =
+        topicId in PROTECTED_CORE_TOPIC_IDS
+
+    /**
      * Resolves a specific capital answer using the exact rules of
      * [LocalKnowledgeBase.resolveSpecificCapitalAnswer] (`lines 519–534`).
      */

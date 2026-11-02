@@ -10,8 +10,14 @@ import com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicDetailEnt
  */
 data class CachedTopicDetailBundle(
     val detail: KnowledgeTopicDetailEntity,
-    val followUpBranches: List<KnowledgeFollowUpBranchEntity> = emptyList()
-)
+    val followUpBranches: List<KnowledgeFollowUpBranchEntity> = emptyList(),
+    val contentVersion: Int = 1
+) {
+    val topicId: String get() = detail.topicId
+    val packId: String get() = detail.packId
+    val compositeKey: String
+        get() = KnowledgeCache.buildCompositeDetailKey(detail.topicId, detail.packId, contentVersion)
+}
 
 /**
  * Snapshot of accounted byte metrics, hit/miss statistics, and oversized rejection counts
@@ -240,6 +246,26 @@ class ByteBoundedLruPartition<K : Any, V : Any>(
     }
 
     /**
+     * Removes all entries matching [predicate] and deducts their accounted bytes.
+     *
+     * @return the number of removed entries.
+     */
+    fun invalidateMatching(predicate: (K, V) -> Boolean): Int = synchronized(lock) {
+        var removedCount = 0
+        val iterator = map.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (predicate(entry.key, entry.value.value)) {
+                currentBytes -= entry.value.sizeBytes
+                iterator.remove()
+                removedCount++
+            }
+        }
+        if (currentBytes < 0) currentBytes = 0
+        removedCount
+    }
+
+    /**
      * Clears all entries from the cache and resets accounted bytes to 0.
      */
     fun invalidateAll() = synchronized(lock) {
@@ -290,6 +316,12 @@ class KnowledgeCache(
         const val DEFAULT_RAW_SCORE_BUDGET_BYTES: Int = 64 * KB   // 65,536 Bytes
         const val TOTAL_DEFAULT_BUDGET_BYTES: Int =
             DEFAULT_HEADER_BUDGET_BYTES + DEFAULT_DETAIL_BUDGET_BYTES + DEFAULT_RAW_SCORE_BUDGET_BYTES // 832 KB
+
+        fun buildCompositeDetailKey(
+            topicId: String,
+            packId: String,
+            contentVersion: Int
+        ): String = "$topicId@$packId#v$contentVersion"
     }
 
     val headerCache = ByteBoundedLruPartition<String, LocalKnowledgeBase.KnowledgeTopic>(
@@ -328,7 +360,7 @@ class KnowledgeCache(
         headerCache.invalidate(topicId)
     }
 
-    // Detail Cache convenience delegates
+    // Detail Cache convenience delegates (both legacy topicId key and composite identity key)
     fun getDetail(topicId: String): CachedTopicDetailBundle? = detailCache.get(topicId)
 
     fun putDetail(topicId: String, bundle: CachedTopicDetailBundle): Boolean =
@@ -339,8 +371,53 @@ class KnowledgeCache(
         loader: () -> CachedTopicDetailBundle
     ): CachedTopicDetailBundle = detailCache.getOrLoad(topicId, loader)
 
+    /**
+     * Retrieves a cached [CachedTopicDetailBundle] strictly matching the active winner's
+     * composite identity `(topicId, packId, contentVersion)`.
+     * Never returns a detail belonging to a different pack or stale contentVersion.
+     */
+    fun getDetailForIdentity(
+        topicId: String,
+        packId: String,
+        contentVersion: Int
+    ): CachedTopicDetailBundle? {
+        val compositeKey = buildCompositeDetailKey(topicId, packId, contentVersion)
+        val cached = detailCache.get(compositeKey) ?: return null
+        if (cached.detail.topicId != topicId ||
+            cached.detail.packId != packId ||
+            cached.contentVersion != contentVersion
+        ) {
+            detailCache.invalidate(compositeKey)
+            return null
+        }
+        return cached
+    }
+
+    /**
+     * Stores a [CachedTopicDetailBundle] keyed by the active winner's composite identity
+     * `(topicId, packId, contentVersion)`.
+     */
+    fun putDetailForIdentity(
+        topicId: String,
+        packId: String,
+        contentVersion: Int,
+        bundle: CachedTopicDetailBundle
+    ): Boolean {
+        val compositeKey = buildCompositeDetailKey(topicId, packId, contentVersion)
+        val versionedBundle = if (bundle.contentVersion == contentVersion) {
+            bundle
+        } else {
+            bundle.copy(contentVersion = contentVersion)
+        }
+        return detailCache.put(compositeKey, versionedBundle)
+    }
+
     fun invalidateDetail(topicId: String) {
         detailCache.invalidate(topicId)
+        val prefix = "$topicId@"
+        detailCache.invalidateMatching { key, value ->
+            key.startsWith(prefix) || value.detail.topicId == topicId
+        }
     }
 
     // Raw Score Cache convenience delegates
@@ -360,13 +437,70 @@ class KnowledgeCache(
     }
 
     /**
-     * Invalidates all cached entries associated with [key] across header, detail, and rawScore
-     * partitions.
+     * Invalidates all cached entries associated with [key] (including composite detail keys for
+     * that topic) across header, detail, and rawScore partitions.
      */
     fun invalidate(key: String) {
         headerCache.invalidate(key)
-        detailCache.invalidate(key)
+        invalidateDetail(key)
         rawScoreCache.invalidate(key)
+    }
+
+    /**
+     * Targeted invalidation for a set of affected [topicIds] and an optional [packId].
+     *
+     * Ensures:
+     * 1. Any header or detail entry belonging to [topicIds] or [packId] is evicted immediately
+     *    so stale pack/version details can never survive as active results.
+     * 2. Unaffected topic headers and detail bundles from other topics/packs remain cached.
+     * 3. [rawScoreCache] is cleared so subsequent search queries score against the new snapshot.
+     */
+    fun invalidateForTopicsAndPack(
+        topicIds: Collection<String>,
+        packId: String? = null
+    ) {
+        val topicIdSet = topicIds.toSet()
+        for (topicId in topicIdSet) {
+            headerCache.invalidate(topicId)
+            detailCache.invalidate(topicId)
+        }
+        if (topicIdSet.isNotEmpty() || !packId.isNullOrBlank()) {
+            detailCache.invalidateMatching { key, value ->
+                val matchesTopic = value.detail.topicId in topicIdSet ||
+                    topicIdSet.any { id -> key == id || key.startsWith("$id@") }
+                val matchesPack = !packId.isNullOrBlank() &&
+                    (value.detail.packId == packId || key.contains("@$packId#"))
+                matchesTopic || matchesPack
+            }
+        }
+        rawScoreCache.invalidateAll()
+    }
+
+    /**
+     * Evicts any cached detail entry whose `(topicId, packId, contentVersion)` does not match
+     * the currently active topic identity map `[activeIdentities]`, and evicts any header
+     * whose topic is no longer active or whose summary/keywords changed.
+     */
+    fun invalidateStaleEntriesAgainstActiveState(
+        activeTopicsById: Map<String, LocalKnowledgeBase.KnowledgeTopic>,
+        activeVersionKeysByTopicId: Map<String, String>
+    ) {
+        headerCache.invalidateMatching { topicId, cachedTopic ->
+            val currentActive = activeTopicsById[topicId]
+            currentActive == null || currentActive != cachedTopic
+        }
+        detailCache.invalidateMatching { key, bundle ->
+            val tId = bundle.detail.topicId
+            val expectedCompositeKey = activeVersionKeysByTopicId[tId]
+            if (expectedCompositeKey == null) {
+                true
+            } else if (key.contains("@")) {
+                key != expectedCompositeKey || bundle.compositeKey != expectedCompositeKey
+            } else {
+                bundle.compositeKey != expectedCompositeKey
+            }
+        }
+        rawScoreCache.invalidateAll()
     }
 
     /**

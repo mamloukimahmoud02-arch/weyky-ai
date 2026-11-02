@@ -1,7 +1,10 @@
 package com.example.core.intelligence.knowledge.repository
 
 import android.content.Context
+import androidx.room.withTransaction
+import com.example.core.intelligence.conversation.ActionableOption
 import com.example.core.intelligence.conversation.LocalKnowledgeBase
+import com.example.core.intelligence.knowledge.cache.CachedTopicDetailBundle
 import com.example.core.intelligence.knowledge.cache.KnowledgeCache
 import com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog
 import com.example.core.intelligence.knowledge.context.KnowledgeAvailabilityStatus
@@ -11,20 +14,89 @@ import com.example.core.intelligence.knowledge.db.converter.KnowledgeTypeConvert
 import com.example.core.intelligence.knowledge.db.dao.KeywordWithTokensBundle
 import com.example.core.intelligence.knowledge.db.dao.KnowledgeDao
 import com.example.core.intelligence.knowledge.db.dao.TopicStorageBundle
+import com.example.core.intelligence.knowledge.db.entity.KnowledgeFollowUpBranchEntity
+import com.example.core.intelligence.knowledge.db.entity.KnowledgePackMetadataEntity
+import com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicDetailEntity
+import com.example.core.intelligence.knowledge.search.ActiveTopicIdentity
 import com.example.core.intelligence.knowledge.search.InMemorySearchSnapshot
 import com.example.core.intelligence.knowledge.search.KnowledgeSearchResult
 import com.example.core.intelligence.knowledge.search.KnowledgeSearchService
 import com.example.core.intelligence.knowledge.search.ScoredTopicCandidate
 import com.example.core.intelligence.knowledge.validation.KnowledgeValidator
+import com.example.core.intelligence.knowledge.validation.ValidationIssue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+
+/**
+ * Status of an on-demand lazy load for a topic's detailed content and follow-up branches.
+ */
+enum class TopicDetailLoadStatus {
+    CACHE_HIT,
+    LOADED_FROM_DB,
+    MISSING_DETAIL,
+    TOPIC_NOT_ACTIVE,
+    MALFORMED_CONTENT,
+    DATABASE_UNAVAILABLE
+}
+
+/**
+ * Result of an on-demand lazy load for a topic's detailed content and follow-up branches,
+ * strictly bound to the active winning [ActiveTopicIdentity] (`topicId + packId + contentVersion`).
+ */
+data class TopicDetailLoadResult(
+    val topicId: String,
+    val identity: ActiveTopicIdentity?,
+    val bundle: CachedTopicDetailBundle?,
+    val status: TopicDetailLoadStatus,
+    val dbQueriesExecuted: Int
+)
+
+/**
+ * Result of a transactional pack mutation (insert/update, deactivate, reactivate, priority change,
+ * or delete) and its subsequent snapshot rebuild and cache invalidation.
+ */
+sealed class PackMutationResult {
+    abstract val isSuccess: Boolean
+
+    data class Success(
+        val packId: String,
+        val affectedTopicIds: Set<String>,
+        val publishedGeneration: Long,
+        val activeTopicCount: Int
+    ) : PackMutationResult() {
+        override val isSuccess: Boolean = true
+    }
+
+    data class ValidationRejected(
+        val packId: String,
+        val issues: List<ValidationIssue>
+    ) : PackMutationResult() {
+        override val isSuccess: Boolean = false
+    }
+
+    data class TransactionFailed(
+        val packId: String,
+        val cause: Throwable
+    ) : PackMutationResult() {
+        override val isSuccess: Boolean = false
+    }
+
+    data class SnapshotRebuildFailed(
+        val packId: String,
+        val cause: Throwable
+    ) : PackMutationResult() {
+        override val isSuccess: Boolean = false
+    }
+}
 
 /**
  * Central KnowledgeRepository for WEYKY Phase 2B.2 & Phase 2B.3.
@@ -65,6 +137,9 @@ class KnowledgeRepository(
 
     private val searchInvocationCounter = AtomicInteger(0)
     private val turnPreparationCounter = AtomicInteger(0)
+    private val detailDatabaseLoadCounter = AtomicInteger(0)
+    private val detailLoadMutexes = ConcurrentHashMap<String, Mutex>()
+    private val missingDetailCompositeKeys = ConcurrentHashMap.newKeySet<String>()
 
     @Volatile
     var lastPreparedContext: PreparedTurnKnowledgeContext? = null
@@ -72,6 +147,14 @@ class KnowledgeRepository(
 
     @Volatile
     var lastTurnSearchInvocations: Int = 0
+        private set
+
+    @Volatile
+    var lastSnapshotBuildDurationMicros: Long = 0L
+        private set
+
+    @Volatile
+    var lastSnapshotBulkSelectQueryCount: Int = 0
         private set
 
     @Volatile
@@ -95,9 +178,13 @@ class KnowledgeRepository(
     val totalTurnPreparations: Int
         get() = turnPreparationCounter.get()
 
+    val totalDetailDatabaseLoads: Int
+        get() = detailDatabaseLoadCounter.get()
+
     fun resetMetricsForTesting() {
         searchInvocationCounter.set(0)
         turnPreparationCounter.set(0)
+        detailDatabaseLoadCounter.set(0)
         lastTurnSearchInvocations = 0
         lastPreparedContext = null
     }
@@ -657,9 +744,18 @@ class KnowledgeRepository(
     /**
      * Builds and atomically publishes a new [InMemorySearchSnapshot] outside the active reference,
      * then invalidates stale cache entries.
+     *
+     * When [affectedTopicIds] is provided, only affected topic headers and detail bundles (plus
+     * [KnowledgeCache.rawScoreCache]) are invalidated, preserving unaffected cached details.
+     * When [affectedTopicIds] is null, invalidates all cache partitions (`cache.invalidateAll()`).
      */
-    fun publishNewSnapshotFromBundles(bundles: List<TopicStorageBundle>): InMemorySearchSnapshot {
+    fun publishNewSnapshotFromBundles(
+        bundles: List<TopicStorageBundle>,
+        affectedTopicIds: Collection<String>? = null,
+        affectedPackId: String? = null
+    ): InMemorySearchSnapshot {
         require(bundles.isNotEmpty()) { "Cannot publish snapshot from empty bundles" }
+        val startNanos = System.nanoTime()
         val nextGen = generationCounter.incrementAndGet()
         val candidateSnapshot = InMemorySearchSnapshot.fromTopicStorageBundles(
             knowledgeGeneration = nextGen,
@@ -669,8 +765,620 @@ class KnowledgeRepository(
             "Constructed snapshot is invalid (topicCount=${candidateSnapshot.topicCount}, keywordCount=${candidateSnapshot.keywordCount})"
         }
         snapshotRef.set(candidateSnapshot)
-        cache.invalidateAll()
+        lastSnapshotBuildDurationMicros = (System.nanoTime() - startNanos) / 1_000L
+
+        if (affectedTopicIds != null) {
+            for (topicId in affectedTopicIds) {
+                missingDetailCompositeKeys.removeIf { it.startsWith("$topicId@") }
+            }
+            if (!affectedPackId.isNullOrBlank()) {
+                missingDetailCompositeKeys.removeIf { it.contains("@$affectedPackId#") }
+            }
+            cache.invalidateForTopicsAndPack(affectedTopicIds, affectedPackId)
+            val activeVersionKeys = candidateSnapshot.activeTopicIdentitiesById.mapValues { (_, id) ->
+                id.compositeDetailKey
+            }
+            cache.invalidateStaleEntriesAgainstActiveState(
+                activeTopicsById = candidateSnapshot.topicsById,
+                activeVersionKeysByTopicId = activeVersionKeys
+            )
+        } else {
+            missingDetailCompositeKeys.clear()
+            cache.invalidateAll()
+        }
         return candidateSnapshot
+    }
+
+    // =========================================================================
+    // Transactional Pack Lifecycle Operations (Task B, Task E, Task F)
+    // =========================================================================
+
+    /**
+     * Validates [pack] and [topics] (including core seed topic protection), persists them
+     * atomically inside a single Room transaction while recomputing active winners across
+     * `previousTopicIds union incomingTopicIds`, rebuilds and publishes a new
+     * [InMemorySearchSnapshot] from a consistent DB state, and invalidates affected cache entries.
+     *
+     * Never publishes a snapshot from an uncommitted or failed transaction.
+     */
+    suspend fun upsertPackAndRefreshSnapshot(
+        pack: KnowledgePackMetadataEntity,
+        topics: List<TopicStorageBundle>,
+        enforceCoreTopicProtection: Boolean = true,
+        referenceTopicIds: Set<String>? = null,
+        simulatedMidTransactionFailure: (() -> Unit)? = null,
+        simulatedSnapshotBuildFailure: (() -> Unit)? = null
+    ): PackMutationResult = withContext(ioDispatcher) {
+        initializationMutex.withLock {
+            val validation = KnowledgeValidator.validatePackBundles(
+                pack = pack,
+                bundles = topics,
+                referenceTopicIds = referenceTopicIds,
+                enforceCoreTopicProtection = enforceCoreTopicProtection
+            )
+            if (!validation.isValid) {
+                return@withLock PackMutationResult.ValidationRejected(pack.packId, validation.issues)
+            }
+
+            val db = databaseRef.get()
+                ?: return@withLock PackMutationResult.TransactionFailed(
+                    pack.packId,
+                    IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+                )
+            val dao = db.knowledgeDao()
+
+            val affectedTopicIds: Set<String> = try {
+                db.withTransaction {
+                    val affected = dao.upsertPackWithTopicsTransactional(pack, topics)
+                    simulatedMidTransactionFailure?.invoke()
+                    affected
+                }
+            } catch (txError: Throwable) {
+                return@withLock PackMutationResult.TransactionFailed(pack.packId, txError)
+            }
+
+            return@withLock rebuildAndPublishAfterCommittedMutation(
+                packId = pack.packId,
+                affectedTopicIds = affectedTopicIds,
+                dao = dao,
+                simulatedSnapshotBuildFailure = simulatedSnapshotBuildFailure
+            )
+        }
+    }
+
+    /**
+     * Atomically deactivates a non-seed knowledge pack without deleting its stored rows,
+     * recomputes active winners across all affected topic IDs, publishes the updated snapshot,
+     * and invalidates affected cache entries.
+     */
+    suspend fun deactivatePackAndRefreshSnapshot(packId: String): PackMutationResult =
+        withContext(ioDispatcher) {
+            initializationMutex.withLock {
+                val db = databaseRef.get()
+                    ?: return@withLock PackMutationResult.TransactionFailed(
+                        packId,
+                        IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+                    )
+                val dao = db.knowledgeDao()
+                val affectedTopicIds = try {
+                    dao.deactivatePackTransactional(packId)
+                } catch (txError: Throwable) {
+                    return@withLock PackMutationResult.TransactionFailed(packId, txError)
+                }
+                rebuildAndPublishAfterCommittedMutation(
+                    packId = packId,
+                    affectedTopicIds = affectedTopicIds,
+                    dao = dao
+                )
+            }
+        }
+
+    /**
+     * Atomically reactivates a previously deactivated knowledge pack, recomputes active winners,
+     * publishes the updated snapshot, and invalidates affected cache entries.
+     */
+    suspend fun reactivatePackAndRefreshSnapshot(
+        packId: String,
+        restoredPriorityOverride: Int? = null
+    ): PackMutationResult = withContext(ioDispatcher) {
+        initializationMutex.withLock {
+            val db = databaseRef.get()
+                ?: return@withLock PackMutationResult.TransactionFailed(
+                    packId,
+                    IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+                )
+            val dao = db.knowledgeDao()
+            val affectedTopicIds = try {
+                dao.reactivatePackTransactional(packId, restoredPriorityOverride)
+            } catch (txError: Throwable) {
+                return@withLock PackMutationResult.TransactionFailed(packId, txError)
+            }
+            rebuildAndPublishAfterCommittedMutation(
+                packId = packId,
+                affectedTopicIds = affectedTopicIds,
+                dao = dao
+            )
+        }
+    }
+
+    /**
+     * Atomically updates a non-seed pack's priority, recomputes active winners, publishes the
+     * updated snapshot, and invalidates affected cache entries.
+     */
+    suspend fun updatePackPriorityAndRefreshSnapshot(
+        packId: String,
+        newPriority: Int
+    ): PackMutationResult = withContext(ioDispatcher) {
+        initializationMutex.withLock {
+            val db = databaseRef.get()
+                ?: return@withLock PackMutationResult.TransactionFailed(
+                    packId,
+                    IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+                )
+            val dao = db.knowledgeDao()
+            val affectedTopicIds = try {
+                dao.updatePackPriorityTransactional(packId, newPriority)
+            } catch (txError: Throwable) {
+                return@withLock PackMutationResult.TransactionFailed(packId, txError)
+            }
+            rebuildAndPublishAfterCommittedMutation(
+                packId = packId,
+                affectedTopicIds = affectedTopicIds,
+                dao = dao
+            )
+        }
+    }
+
+    /**
+     * Atomically deletes a non-seed pack, recomputes fallback winners, publishes the updated
+     * snapshot, and invalidates affected cache entries.
+     */
+    suspend fun deletePackAndRefreshSnapshot(packId: String): PackMutationResult =
+        withContext(ioDispatcher) {
+            initializationMutex.withLock {
+                val db = databaseRef.get()
+                    ?: return@withLock PackMutationResult.TransactionFailed(
+                        packId,
+                        IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+                    )
+                val dao = db.knowledgeDao()
+                val affectedTopicIds = try {
+                    db.withTransaction {
+                        val affected = dao.getTopicIdsByPack(packId).toSet()
+                        dao.deletePackAndRecalculateWinnersTransactional(packId)
+                        affected
+                    }
+                } catch (txError: Throwable) {
+                    return@withLock PackMutationResult.TransactionFailed(packId, txError)
+                }
+                rebuildAndPublishAfterCommittedMutation(
+                    packId = packId,
+                    affectedTopicIds = affectedTopicIds,
+                    dao = dao
+                )
+            }
+        }
+
+    private suspend fun rebuildAndPublishAfterCommittedMutation(
+        packId: String,
+        affectedTopicIds: Set<String>,
+        dao: KnowledgeDao,
+        simulatedSnapshotBuildFailure: (() -> Unit)? = null
+    ): PackMutationResult {
+        return try {
+            simulatedSnapshotBuildFailure?.invoke()
+            val bundles = loadActiveTopicStorageBundlesFromDao(dao)
+            if (bundles.isEmpty()) {
+                throw IllegalStateException("No active topic bundles found after pack mutation for '$packId'.")
+            }
+            val published = publishNewSnapshotFromBundles(
+                bundles = bundles,
+                affectedTopicIds = affectedTopicIds,
+                affectedPackId = packId
+            )
+            PackMutationResult.Success(
+                packId = packId,
+                affectedTopicIds = affectedTopicIds,
+                publishedGeneration = published.knowledgeGeneration,
+                activeTopicCount = published.topicCount
+            )
+        } catch (buildError: Throwable) {
+            PackMutationResult.SnapshotRebuildFailed(packId, buildError)
+        }
+    }
+
+    // =========================================================================
+    // Lazy-Loaded Detailed Content & Follow-Up Branch Resolution (Task C & D)
+    // =========================================================================
+
+    /**
+     * Lazily retrieves the [CachedTopicDetailBundle] (detailed content + ordered follow-up
+     * branches) for [topicId] strictly bound to the active winning [ActiveTopicIdentity]
+     * (`topicId + packId + contentVersion`) in [snapshotOverride] (or [currentSnapshot]).
+     *
+     * Guarantees:
+     * 1. Never loads detailed content belonging to an inactive or losing pack.
+     * 2. Serves from [KnowledgeCache.detailCache] on cache hit with zero database I/O.
+     * 3. Coalesces concurrent requests for the same `(topicId, packId, contentVersion)` key
+     *    using a per-key [Mutex] so duplicate concurrent database reads are avoided.
+     * 4. Validates loaded detail and follow-up branches before caching, handling missing or
+     *    malformed records safely without crashing the conversation engine.
+     */
+    suspend fun getOrLoadTopicDetail(
+        topicId: String,
+        snapshotOverride: InMemorySearchSnapshot? = null
+    ): TopicDetailLoadResult {
+        val canonicalId = canonicalizeKnowledgeTopicId(topicId)
+            ?: return TopicDetailLoadResult(
+                topicId = topicId,
+                identity = null,
+                bundle = null,
+                status = TopicDetailLoadStatus.TOPIC_NOT_ACTIVE,
+                dbQueriesExecuted = 0
+            )
+
+        val snap = snapshotOverride ?: snapshotRef.get()
+        val identity = snap.getActiveIdentity(canonicalId)
+            ?: return TopicDetailLoadResult(
+                topicId = canonicalId,
+                identity = null,
+                bundle = null,
+                status = TopicDetailLoadStatus.TOPIC_NOT_ACTIVE,
+                dbQueriesExecuted = 0
+            )
+
+        // 1. Check version-isolated & pack-isolated DetailCache first (zero I/O)
+        cache.getDetailForIdentity(
+            topicId = identity.topicId,
+            packId = identity.packId,
+            contentVersion = identity.contentVersion
+        )?.let { cachedBundle ->
+            return TopicDetailLoadResult(
+                topicId = canonicalId,
+                identity = identity,
+                bundle = cachedBundle,
+                status = TopicDetailLoadStatus.CACHE_HIT,
+                dbQueriesExecuted = 0
+            )
+        }
+
+        // 2. Check negative cache for known missing detail on this exact composite identity
+        val compositeKey = identity.compositeDetailKey
+        if (compositeKey in missingDetailCompositeKeys) {
+            return TopicDetailLoadResult(
+                topicId = canonicalId,
+                identity = identity,
+                bundle = null,
+                status = TopicDetailLoadStatus.MISSING_DETAIL,
+                dbQueriesExecuted = 0
+            )
+        }
+
+        val db = databaseRef.get()
+            ?: return TopicDetailLoadResult(
+                topicId = canonicalId,
+                identity = identity,
+                bundle = null,
+                status = TopicDetailLoadStatus.DATABASE_UNAVAILABLE,
+                dbQueriesExecuted = 0
+            )
+
+        // 3. Coalesce concurrent loads for the same composite key on ioDispatcher
+        val keyMutex = detailLoadMutexes.computeIfAbsent(compositeKey) { Mutex() }
+        return withContext(ioDispatcher) {
+            keyMutex.withLock {
+                // Double-check cache inside lock
+                cache.getDetailForIdentity(
+                    topicId = identity.topicId,
+                    packId = identity.packId,
+                    contentVersion = identity.contentVersion
+                )?.let { cachedAfterWait ->
+                    return@withLock TopicDetailLoadResult(
+                        topicId = canonicalId,
+                        identity = identity,
+                        bundle = cachedAfterWait,
+                        status = TopicDetailLoadStatus.CACHE_HIT,
+                        dbQueriesExecuted = 0
+                    )
+                }
+
+                if (compositeKey in missingDetailCompositeKeys) {
+                    return@withLock TopicDetailLoadResult(
+                        topicId = canonicalId,
+                        identity = identity,
+                        bundle = null,
+                        status = TopicDetailLoadStatus.MISSING_DETAIL,
+                        dbQueriesExecuted = 0
+                    )
+                }
+
+                runCatching {
+                    val dao = db.knowledgeDao()
+                    // Verify the header in Room still matches the requested packId and contentVersion
+                    val storedHeader = dao.getTopicHeaderByIdAndPack(identity.topicId, identity.packId)
+                    if (storedHeader == null || storedHeader.packPriority < 0) {
+                        return@withLock TopicDetailLoadResult(
+                            topicId = canonicalId,
+                            identity = identity,
+                            bundle = null,
+                            status = TopicDetailLoadStatus.TOPIC_NOT_ACTIVE,
+                            dbQueriesExecuted = 1
+                        )
+                    }
+
+                    detailDatabaseLoadCounter.incrementAndGet()
+                    val (loadedDetail, loadedBranches) =
+                        dao.loadTopicDetailAndBranchesByIdentityTransactional(
+                            topicId = identity.topicId,
+                            packId = identity.packId
+                        )
+
+                    if (loadedDetail == null && loadedBranches.isEmpty()) {
+                        missingDetailCompositeKeys.add(compositeKey)
+                        return@withLock TopicDetailLoadResult(
+                            topicId = canonicalId,
+                            identity = identity,
+                            bundle = null,
+                            status = TopicDetailLoadStatus.MISSING_DETAIL,
+                            dbQueriesExecuted = 2
+                        )
+                    }
+
+                    val effectiveDetail = loadedDetail ?: KnowledgeTopicDetailEntity(
+                        topicId = identity.topicId,
+                        packId = identity.packId,
+                        detailedArabic = storedHeader.arabicSummary,
+                        detailedEnglish = storedHeader.englishSummary,
+                        relatedTopicIdsJson = "[]",
+                        examplesJson = "[]",
+                        lastReviewed = 0L,
+                        additionalContentJson = null
+                    )
+
+                    // Verify composite identity & validate content integrity
+                    if (effectiveDetail.topicId != identity.topicId ||
+                        effectiveDetail.packId != identity.packId ||
+                        !KnowledgeValidator.validateTopicDetail(effectiveDetail).isValid ||
+                        loadedBranches.any {
+                            it.topicId != identity.topicId ||
+                                it.packId != identity.packId ||
+                                !KnowledgeValidator.validateFollowUpBranch(it).isValid
+                        }
+                    ) {
+                        return@withLock TopicDetailLoadResult(
+                            topicId = canonicalId,
+                            identity = identity,
+                            bundle = null,
+                            status = TopicDetailLoadStatus.MALFORMED_CONTENT,
+                            dbQueriesExecuted = 2
+                        )
+                    }
+
+                    val bundle = CachedTopicDetailBundle(
+                        detail = effectiveDetail,
+                        followUpBranches = loadedBranches,
+                        contentVersion = storedHeader.contentVersion
+                    )
+                    cache.putDetailForIdentity(
+                        topicId = identity.topicId,
+                        packId = identity.packId,
+                        contentVersion = storedHeader.contentVersion,
+                        bundle = bundle
+                    )
+
+                    TopicDetailLoadResult(
+                        topicId = canonicalId,
+                        identity = identity.copy(contentVersion = storedHeader.contentVersion),
+                        bundle = bundle,
+                        status = TopicDetailLoadStatus.LOADED_FROM_DB,
+                        dbQueriesExecuted = 2
+                    )
+                }.getOrElse {
+                    TopicDetailLoadResult(
+                        topicId = canonicalId,
+                        identity = identity,
+                        bundle = null,
+                        status = TopicDetailLoadStatus.MALFORMED_CONTENT,
+                        dbQueriesExecuted = 0
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Pre-warms the detailed content and follow-up branches for [topicId] on [ioDispatcher]
+     * when [topicId] is active and not already in [KnowledgeCache.detailCache].
+     */
+    suspend fun preWarmTopicDetailIfNeeded(
+        topicId: String?,
+        snapshotOverride: InMemorySearchSnapshot? = null
+    ) {
+        if (topicId.isNullOrBlank()) return
+        getOrLoadTopicDetail(topicId = topicId, snapshotOverride = snapshotOverride)
+    }
+
+    /**
+     * Checks whether the active topic [topicId] has any stored/cached follow-up branch trigger
+     * keywords matching [normalizedQuery] so custom external topic sub-questions are recognized
+     * as follow-ups.
+     */
+    fun hasMatchingFollowUpBranchTrigger(
+        topicId: String?,
+        normalizedQuery: String,
+        snapshotOverride: InMemorySearchSnapshot? = null
+    ): Boolean {
+        if (topicId.isNullOrBlank() || normalizedQuery.isBlank()) return false
+        val canonicalId = canonicalizeKnowledgeTopicId(topicId) ?: return false
+        val bundle = obtainDetailBundleSafely(canonicalId, snapshotOverride) ?: return false
+        if (bundle.followUpBranches.isEmpty()) return false
+
+        val relaxedQuery = LocalKnowledgeBase.normalizeArabic(normalizedQuery)
+        val queryTokens = relaxedQuery.split(" ").filter { it.isNotBlank() }
+        val queryStems = queryTokens.map { LocalKnowledgeBase.stripArabicPrefixes(it).ifEmpty { it } }
+
+        for (branch in bundle.followUpBranches) {
+            if (branch.isDefault || branch.matchMode == "DEFAULT_FALLBACK") continue
+            if (matchesFollowUpBranchTriggers(branch, relaxedQuery, queryTokens, queryStems)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Resolves a dynamic follow-up elaboration or detailed explanation for [topicId] from its
+     * lazy-loaded [CachedTopicDetailBundle] (`knowledge_followup_branches` and
+     * `knowledge_topic_details`), strictly bound to the active winner's `(topicId, packId, contentVersion)`.
+     *
+     * Used by `ConversationalReasoner` when `LocalKnowledgeBase.getTopicFollowUpElaboration`
+     * returns `null` (preserving 100% of existing seed topic follow-up paths).
+     */
+    fun resolveDynamicFollowUpElaboration(
+        topicId: String,
+        query: String,
+        isArabic: Boolean,
+        snapshotOverride: InMemorySearchSnapshot? = null
+    ): Pair<String, List<ActionableOption>>? {
+        val canonicalId = canonicalizeKnowledgeTopicId(topicId) ?: return null
+        val snap = snapshotOverride ?: snapshotRef.get()
+        val kbTopic = snap.topicsById[canonicalId] ?: return null
+        val bundle = obtainDetailBundleSafely(canonicalId, snap) ?: return null
+
+        val relaxedQuery = LocalKnowledgeBase.normalizeArabic(query)
+        val queryTokens = relaxedQuery.split(" ").filter { it.isNotBlank() }
+        val queryStems = queryTokens.map { LocalKnowledgeBase.stripArabicPrefixes(it).ifEmpty { it } }
+
+        // 1. Evaluate non-default follow-up branches in priorityOrder ASC, branchId ASC
+        val orderedBranches = bundle.followUpBranches.sortedWith(
+            compareBy<KnowledgeFollowUpBranchEntity> { it.priorityOrder }.thenBy { it.branchId }
+        )
+
+        for (branch in orderedBranches) {
+            if (branch.isDefault || branch.matchMode == "DEFAULT_FALLBACK") continue
+            if (matchesFollowUpBranchTriggers(branch, relaxedQuery, queryTokens, queryStems)) {
+                val text = if (isArabic) branch.responseArabic else branch.responseEnglish
+                if (text.isNotBlank()) {
+                    val options = converters.toActionableOptionList(branch.actionableOptionsJson)
+                        .ifEmpty { kbTopic.suggestedFollowUps }
+                    return text to options
+                }
+            }
+        }
+
+        // 2. Check if user specifically asked for examples from detail.examplesJson
+        val asksExamples = relaxedQuery.contains("مثال") ||
+            relaxedQuery.contains("امثله") ||
+            queryTokens.contains("example") ||
+            queryTokens.contains("examples")
+        if (asksExamples) {
+            val examples = converters.toStringList(bundle.detail.examplesJson)
+                .filter { it.isNotBlank() }
+            if (examples.isNotEmpty()) {
+                val baseDetail = if (isArabic) bundle.detail.detailedArabic else bundle.detail.detailedEnglish
+                val formattedExamples = examples.joinToString("\n- ", prefix = "\n- ")
+                val combined = if (baseDetail.isNotBlank()) {
+                    "$baseDetail$formattedExamples"
+                } else {
+                    examples.joinToString("\n- ", prefix = "- ")
+                }
+                return combined to kbTopic.suggestedFollowUps
+            }
+        }
+
+        // 3. Evaluate default fallback branch if present
+        val defaultBranch = orderedBranches.firstOrNull {
+            it.isDefault || it.matchMode == "DEFAULT_FALLBACK"
+        }
+        if (defaultBranch != null) {
+            val text = if (isArabic) defaultBranch.responseArabic else defaultBranch.responseEnglish
+            if (text.isNotBlank()) {
+                val options = converters.toActionableOptionList(defaultBranch.actionableOptionsJson)
+                    .ifEmpty { kbTopic.suggestedFollowUps }
+                return text to options
+            }
+        }
+
+        // 4. Fall back to detailedArabic / detailedEnglish from KnowledgeTopicDetailEntity
+        val detailText = if (isArabic) bundle.detail.detailedArabic else bundle.detail.detailedEnglish
+        val summaryText = if (isArabic) kbTopic.arabicSummary else kbTopic.englishSummary
+        if (detailText.isNotBlank() && detailText != summaryText) {
+            return detailText to kbTopic.suggestedFollowUps
+        }
+
+        return null
+    }
+
+    private fun obtainDetailBundleSafely(
+        canonicalTopicId: String,
+        snapshotOverride: InMemorySearchSnapshot?
+    ): CachedTopicDetailBundle? {
+        val snap = snapshotOverride ?: snapshotRef.get()
+        val identity = snap.getActiveIdentity(canonicalTopicId) ?: return null
+
+        cache.getDetailForIdentity(
+            topicId = identity.topicId,
+            packId = identity.packId,
+            contentVersion = identity.contentVersion
+        )?.let { return it }
+
+        if (identity.compositeDetailKey in missingDetailCompositeKeys) {
+            return null
+        }
+
+        if (databaseRef.get() == null) {
+            return null
+        }
+
+        return runCatching {
+            runBlocking(ioDispatcher) {
+                getOrLoadTopicDetail(
+                    topicId = canonicalTopicId,
+                    snapshotOverride = snap
+                ).bundle
+            }
+        }.getOrNull()
+    }
+
+    private fun matchesFollowUpBranchTriggers(
+        branch: KnowledgeFollowUpBranchEntity,
+        relaxedQuery: String,
+        queryTokens: List<String>,
+        queryStems: List<String>
+    ): Boolean {
+        val triggers = converters.toStringList(branch.triggerKeywordsJson)
+        if (triggers.isEmpty()) return false
+
+        for (rawTrigger in triggers) {
+            val normTrigger = LocalKnowledgeBase.normalizeArabic(rawTrigger)
+            if (normTrigger.isBlank()) continue
+
+            when (branch.matchMode) {
+                "WORD_BOUNDARY" -> {
+                    val triggerTokens = normTrigger.split(" ").filter { it.isNotBlank() }
+                    if (triggerTokens.isNotEmpty() && triggerTokens.all { tTok ->
+                            val tStem = LocalKnowledgeBase.stripArabicPrefixes(tTok).ifEmpty { tTok }
+                            queryTokens.contains(tTok) || queryStems.contains(tStem)
+                        }
+                    ) {
+                        return true
+                    }
+                }
+                "SUBSTRING_CONTAINS" -> {
+                    if (relaxedQuery.contains(normTrigger)) {
+                        return true
+                    }
+                    val triggerTokens = normTrigger.split(" ").filter { it.isNotBlank() }
+                    if (triggerTokens.size == 1) {
+                        val tStem = LocalKnowledgeBase.stripArabicPrefixes(triggerTokens[0]).ifEmpty { triggerTokens[0] }
+                        if (tStem.length >= 3 && queryStems.contains(tStem)) {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+        return false
     }
 
     private suspend fun ensureCoreSeedPersistedIdempotently(dao: KnowledgeDao) {
@@ -692,28 +1400,10 @@ class KnowledgeRepository(
         }
 
         val seedBundles = SeedKnowledgeCatalog.buildCoreSeedTopicStorageBundles(converters)
-
-        val allHeaders = seedBundles.map { it.header }
-        val allKeywords = ArrayList<com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordEntity>()
-        val allTokens = ArrayList<com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordTokenEntity>()
-        var syntheticKeywordId = 1L
-        var syntheticTokenId = 1L
-        for (bundle in seedBundles) {
-            for (kwWithTokens in bundle.keywordsWithTokens) {
-                val kwId = syntheticKeywordId++
-                allKeywords.add(kwWithTokens.keyword.copy(keywordId = kwId))
-                for (tok in kwWithTokens.tokens) {
-                    allTokens.add(tok.copy(tokenId = syntheticTokenId++, keywordId = kwId))
-                }
-            }
-        }
-        val validation = KnowledgeValidator.validatePackData(
+        val validation = KnowledgeValidator.validatePackBundles(
             pack = expectedPack,
-            topics = allHeaders,
-            keywords = allKeywords,
-            tokens = allTokens,
-            details = emptyList(),
-            followUpBranches = emptyList()
+            bundles = seedBundles,
+            enforceCoreTopicProtection = true
         )
         check(validation.isValid) {
             "Core seed catalog failed KnowledgeValidator: ${validation.issues}"
@@ -743,7 +1433,24 @@ class KnowledgeRepository(
         return true
     }
 
-    private suspend fun loadActiveTopicStorageBundlesFromDao(
+    /**
+     * Loads all active winning topic bundles from Room using a bounded constant number of bulk
+     * SQL queries (`<= 3` SELECT queries inside a single consistent read transaction), without
+     * loading `detail` or `followUpBranches`.
+     */
+    internal suspend fun loadActiveTopicStorageBundlesFromDao(
+        dao: KnowledgeDao
+    ): List<TopicStorageBundle> {
+        val bundles = dao.loadActiveSnapshotStorageBundlesTransactional()
+        lastSnapshotBulkSelectQueryCount = if (bundles.isEmpty()) 1 else 3
+        return bundles
+    }
+
+    /**
+     * Legacy per-topic (`1 + 2N`) loader retained exclusively for parity and query-count
+     * comparison tests in `Phase2B4AArchitecturalPreparationTest`.
+     */
+    internal suspend fun loadActiveTopicStorageBundlesLegacyPerTopicForTesting(
         dao: KnowledgeDao
     ): List<TopicStorageBundle> {
         val activeHeaders = dao.getAllActiveTopicHeadersOrdered()
