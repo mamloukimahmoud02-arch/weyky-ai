@@ -392,12 +392,60 @@ class ConversationalReasoner(
     return null
   }
 
+  private fun containsStandalonePhrase(words: List<String>, phrase: String): Boolean {
+    val phraseTokens = phrase.split(" ").filter { it.isNotBlank() }
+    if (phraseTokens.isEmpty() || words.size < phraseTokens.size) return false
+    val maxStart = words.size - phraseTokens.size
+    for (i in 0..maxStart) {
+      var allMatch = true
+      for (j in phraseTokens.indices) {
+        if (words[i + j] != phraseTokens[j]) {
+          allMatch = false
+          break
+        }
+      }
+      if (allMatch) return true
+    }
+    return false
+  }
+
+  private fun isStandaloneGreetingQuery(words: List<String>): Boolean {
+    if (words.isEmpty()) return false
+    val standaloneGreetingWords = setOf(
+      "مرحبا", "مرحب", "اهلا", "اهلين", "هلا", "ياهلا", "هاي",
+      "hello", "hi", "hey"
+    )
+    val standaloneGreetingPhrases = listOf(
+      "السلام عليكم", "سلام عليكم", "يا هلا", "يا مرحبا", "اهلا وسهلا", "اهلا بك"
+    )
+    val hasGreetingTokenOrPhrase = words.any { it in standaloneGreetingWords } ||
+      standaloneGreetingPhrases.any { containsStandalonePhrase(words, it) }
+    if (!hasGreetingTokenOrPhrase) return false
+
+    // Prevent an introductory greeting followed by a substantive factual/actionable question
+    // from being swallowed as pure chitchat.
+    val questionMarkers = setOf(
+      "كيف", "لماذا", "ليش", "ما", "ماذا", "متي", "اين", "كم", "هل",
+      "what", "why", "how", "where", "when"
+    )
+    val isHowAreYou = containsStandalonePhrase(words, "كيف حالك") ||
+      containsStandalonePhrase(words, "كيف الحال") ||
+      containsStandalonePhrase(words, "how are you")
+    if (!isHowAreYou && words.any { it in questionMarkers } && words.size >= 3) {
+      return false
+    }
+    return true
+  }
+
   private fun handleGreetingsAndChitchat(
     query: String,
     isArabic: Boolean
   ): ReasoningResult? {
+    val words = query.split(" ").filter { it.isNotBlank() }
+    if (words.isEmpty()) return null
+
     when {
-      query.contains("السلام عليكم") || query.contains("مرحبا") || query.contains("اهلا") || query.contains("هلا") || query.contains("هاي") || query.startsWith("hello") || query.startsWith("hi") -> {
+      isStandaloneGreetingQuery(words) -> {
         val reply = if (isArabic) {
           "وعليكم السلام ورحمة الله! أهلاً بك، أنا WEYKY، كيف يمكنني مساعدتك أو التفكير معك اليوم؟"
         } else {
@@ -413,7 +461,8 @@ class ConversationalReasoner(
           )
         )
       }
-      query.contains("كيف حالك") || query.contains("اخبارك") || query.contains("شلونك") || query.contains("how are you") -> {
+      containsStandalonePhrase(words, "كيف حالك") || containsStandalonePhrase(words, "كيف الحال") ||
+        words.contains("اخبارك") || words.contains("شلونك") || containsStandalonePhrase(words, "how are you") -> {
         val reply = if (isArabic) {
           "أنا بخير وفي كامل الجاهزية لخدمتك! كيف حالك أنت وكيف يسير يومك؟"
         } else {
@@ -428,7 +477,10 @@ class ConversationalReasoner(
           )
         )
       }
-      query.contains("شكرا") || query.contains("مشكور") || query.contains("يعطيك العافية") || query.contains("تسلم") || query.contains("thank") -> {
+      (words.contains("شكرا") && !containsStandalonePhrase(words, "لا شكرا")) ||
+        words.contains("مشكور") || containsStandalonePhrase(words, "يعطيك العافيه") ||
+        containsStandalonePhrase(words, "يعطيك العافية") || words.contains("تسلم") ||
+        words.contains("thanks") || containsStandalonePhrase(words, "thank you") -> {
         val reply = if (isArabic) {
           "على الرحب والسعة دائماً! يسعدني مساعدتك في أي وقت."
         } else {
@@ -443,7 +495,8 @@ class ConversationalReasoner(
           )
         )
       }
-      query.contains("صباح الخير") || query.contains("good morning") -> {
+      containsStandalonePhrase(words, "صباح الخير") || containsStandalonePhrase(words, "صباح النور") ||
+        containsStandalonePhrase(words, "good morning") -> {
         val reply = if (isArabic) {
           "صباح النور والسرور! أتمنى لك يوماً موفقاً ومليئاً بالإنجاز. هل نلقي نظرة على طقس اليوم ومواعيدك؟"
         } else {
@@ -459,7 +512,9 @@ class ConversationalReasoner(
           )
         )
       }
-      query.contains("مساء الخير") || query.contains("تصبح على خير") || query.contains("good evening") || query.contains("good night") -> {
+      containsStandalonePhrase(words, "مساء الخير") || containsStandalonePhrase(words, "مساء النور") ||
+        containsStandalonePhrase(words, "تصبح علي خير") || containsStandalonePhrase(words, "تصبح على خير") ||
+        containsStandalonePhrase(words, "good evening") || containsStandalonePhrase(words, "good night") -> {
         val reply = if (isArabic) {
           "مساء الأنوار! أتمنى أن يكون يومك قد مرّ بسلام. هل ترغب في نصائح للاسترخاء أو ضبط الهاتف للراحة؟"
         } else {

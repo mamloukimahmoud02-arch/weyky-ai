@@ -71,7 +71,10 @@ object LocalKnowledgeBase {
     // 5. Artificial Intelligence & Local Processing
     KnowledgeTopic(
       id = "ai_concept",
-      keywords = listOf("الذكاء الاصطناعي", "ai", "artificial intelligence", "تعلم الآلة", "الشبكات العصبية", "machine learning", "كيف تفكر", "كيف تعمل"),
+      keywords = listOf(
+        "الذكاء الاصطناعي", "ai", "artificial intelligence", "تعلم الآلة",
+        "الشبكات العصبية", "machine learning", "كيف يعمل الذكاء الاصطناعي", "كيف يفكر الذكاء الاصطناعي"
+      ),
       arabicSummary = "الذكاء الاصطناعي هو قدرة الأنظمة الحاسوبية على محاكاة القدرات الذهنية البشرية مثل الفهم، الاستنتاج، والتعلم من السياق. في WEYKY، نعتمد على الذكاء المدمج محلياً على الجهاز (On-Device Intelligence) لضمان السرعة الفورية وحماية خصوصية بياناتك بالكامل دون الحاجة لإرسالها إلى خوادم خارجية.",
       englishSummary = "Artificial Intelligence simulates human cognitive capabilities such as learning, deduction, and natural language comprehension. In WEYKY, contextual reasoning and on-device knowledge are integrated locally for maximum privacy and instant speed without relying on external servers.",
       suggestedFollowUps = listOf(
@@ -435,7 +438,15 @@ object LocalKnowledgeBase {
         else if (containsPhraseOnWordBoundary(strictQueryTokens, normQueryTokens, strictKwTokens, normKwTokens)) {
           val exactStrictBonus = if (strictQuery.contains(strictKw)) 4 else 0
           kwScore = if (normKwTokens.size >= 2) {
-            130 + normKwTokens.size * 25 + normKw.length + exactStrictBonus
+            val hasDistinctiveContentToken = contentKwIndices.any { kIdx ->
+              val tok = normKwTokens.getOrElse(kIdx) { "" }
+              com.example.core.intelligence.knowledge.search.KnowledgeSearchService.isDistinctiveSemanticToken(tok)
+            }
+            if (hasDistinctiveContentToken) {
+              130 + normKwTokens.size * 25 + normKw.length + exactStrictBonus
+            } else {
+              0
+            }
           } else {
             val tokenLen = stripArabicPrefixes(normKwTokens[0]).length
             if (tokenLen <= 2 && normKwTokens[0] != "ai") 40 else 95 + tokenLen + exactStrictBonus
@@ -443,7 +454,11 @@ object LocalKnowledgeBase {
         }
         // 3. Order-independent multi-token match (all content tokens of a multi-word keyword appear in the query)
         else if (contentKwIndices.size >= 2 && contentQueryIndices.isNotEmpty()) {
-          val allContentMatched = contentKwIndices.all { kIdx ->
+          val hasDistinctiveContentToken = contentKwIndices.any { kIdx ->
+            val tok = normKwTokens.getOrElse(kIdx) { "" }
+            com.example.core.intelligence.knowledge.search.KnowledgeSearchService.isDistinctiveSemanticToken(tok)
+          }
+          val allContentMatched = hasDistinctiveContentToken && contentKwIndices.all { kIdx ->
             val sKwTok = strictKwTokens.getOrElse(kIdx) { normKwTokens[kIdx] }
             val nKwTok = normKwTokens[kIdx]
             contentQueryIndices.any { qIdx ->

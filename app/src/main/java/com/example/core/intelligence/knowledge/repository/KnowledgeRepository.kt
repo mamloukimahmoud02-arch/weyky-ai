@@ -557,12 +557,16 @@ class KnowledgeRepository(
         if (relaxedTokens.isEmpty()) return null
 
         // 1. Check single-content-token multi-word keywords in the reverse token index
-        // (e.g., "ما هو weyky", "ما هي weyky", "حدثني عن weyky" -> sole content token "weyky")
+        // (e.g., "ما هو weyky", "ما هي weyky", "حدثني عن weyky" -> sole content token "weyky").
+        // Guard against generic non-distinctive verbs/predicates (e.g., "تعمل", "يعمل", "تفكر").
         for (qTok in relaxedTokens) {
             if (qTok.length < 4 || qTok in KnowledgeSearchService.AMBIGUOUS_HOMOGRAPH_WORDS) {
                 continue
             }
             val qStem = LocalKnowledgeBase.stripArabicPrefixes(qTok)
+            if (!KnowledgeSearchService.isDistinctiveSemanticToken(qTok, qStem)) {
+                continue
+            }
             val topicIndices = LinkedHashSet<Int>()
             snapshot.reverseTokenIndex.getTopicsByRelaxedToken(qTok)?.forEach { topicIndices.add(it) }
             snapshot.reverseTokenIndex.getTopicsByRelaxedStem(qStem)?.forEach { topicIndices.add(it) }
@@ -574,7 +578,9 @@ class KnowledgeRepository(
                     kw.tokenCount >= 2 &&
                         kw.contentTokenCount == 1 &&
                         kw.tokens.any { tok ->
-                            !tok.isStopWord && (tok.relaxedToken == qTok || tok.relaxedStem == qStem)
+                            !tok.isStopWord &&
+                                KnowledgeSearchService.isDistinctiveSemanticToken(tok.relaxedToken, tok.relaxedStem) &&
+                                (tok.relaxedToken == qTok || tok.relaxedStem == qStem)
                         }
                 }
                 if (matchedSingleContentKw) {

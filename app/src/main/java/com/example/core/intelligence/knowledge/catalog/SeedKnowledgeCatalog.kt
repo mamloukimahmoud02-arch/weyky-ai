@@ -167,7 +167,10 @@ object SeedKnowledgeCatalog {
         SeedTopicCatalogEntry(
             topicId = "ai_concept",
             topicOrderIndex = 4,
-            keywords = listOf("الذكاء الاصطناعي", "ai", "artificial intelligence", "تعلم الآلة", "الشبكات العصبية", "machine learning", "كيف تفكر", "كيف تعمل"),
+            keywords = listOf(
+                "الذكاء الاصطناعي", "ai", "artificial intelligence", "تعلم الآلة",
+                "الشبكات العصبية", "machine learning", "كيف يعمل الذكاء الاصطناعي", "كيف يفكر الذكاء الاصطناعي"
+            ),
             arabicSummary = "الذكاء الاصطناعي هو قدرة الأنظمة الحاسوبية على محاكاة القدرات الذهنية البشرية مثل الفهم، الاستنتاج، والتعلم من السياق. في WEYKY، نعتمد على الذكاء المدمج محلياً على الجهاز (On-Device Intelligence) لضمان السرعة الفورية وحماية خصوصية بياناتك بالكامل دون الحاجة لإرسالها إلى خوادم خارجية.",
             englishSummary = "Artificial Intelligence simulates human cognitive capabilities such as learning, deduction, and natural language comprehension. In WEYKY, contextual reasoning and on-device knowledge are integrated locally for maximum privacy and instant speed without relying on external servers.",
             suggestedFollowUps = listOf(

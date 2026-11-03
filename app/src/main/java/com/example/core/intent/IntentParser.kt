@@ -293,6 +293,45 @@ object IntentParser {
       "device_detailed_specs" -> return WeykyIntent.DeviceInfoDetailedIntent
     }
 
+    val mentionsBatteryOrCharging = input.contains("battery") ||
+      hasWord(input, "charge", "charging", "charged", "charger") ||
+      input.contains("بطاريه") || input.contains("البطاريه") || input.contains("بطاريتي") ||
+      input.contains("شحن") || input.contains("يشحن") || input.contains("تشحن") ||
+      input.contains("الشاحن") || input.contains("مشحون")
+
+    val mentionsPowerConsumption = input.contains("استهلاك الطاقه") || input.contains("توفير الطاقه") ||
+      input.contains("حفظ الطاقه") || input.contains("power consumption") || input.contains("save power")
+
+    val isBatterySufficiencyOrForecastQuestion = input.contains("تكفي") || input.contains("ستكفي") ||
+      input.contains("تصمد") || input.contains("ستصمد") || input.contains("ستتبقي") ||
+      input.contains("تتبقي") || input.contains("يتبقي") || input.contains("سيبقي") ||
+      input.contains("كم باقي") || input.contains("كم متبقي") ||
+      hasWord(input, "enough", "remain", "left", "last")
+
+    val isCausalOrAdvisoryBatteryQuery = !isBatterySufficiencyOrForecastQuestion && (
+      input.contains("لماذا") || input.contains("ليش") ||
+      input.contains("ما سبب") || input.contains("اسباب") || input.contains("ما العوامل") ||
+      input.contains("عوامل") || input.contains("تؤثر") || input.contains("توثر") ||
+      input.contains("تاثير") || input.contains("يضر") || input.contains("تضر") ||
+      input.contains("ضرر") || input.contains("اضرار") || input.contains("خطر") ||
+      input.contains("تنفد") || input.contains("ينفد") || input.contains("نفاد") ||
+      input.contains("تفرغ") || input.contains("استنزاف") || input.contains("بسرعه") ||
+      input.contains("استهلاك") || input.contains("اهلاك") || input.contains("اقلل") ||
+      input.contains("تقليل") || input.contains("توفير") || input.contains("اطاله") ||
+      input.contains("حفاظ") || input.contains("الحفاظ") || input.contains("احافظ") ||
+      input.contains("حمايه") || input.contains("نصائح") || input.contains("نصايح") ||
+      input.contains("نصيحه") || input.contains("طرق") || input.contains("كيف") ||
+      input.contains("عمر البطاريه") || input.contains("صحه البطاريه") ||
+      input.contains("طوال الليل") || input.contains("اثناء النوم") ||
+      input.contains("سخونه") || input.contains("حراره البطاريه") ||
+      hasWord(input, "why", "causes", "factors", "drain", "draining", "overnight", "damage", "harm", "affect", "lifespan", "tips", "care", "preserve", "protect", "reduce") ||
+      input.contains("how to") || input.contains("how do") || input.contains("how can") ||
+      input.contains("bad for") || input.contains("battery health") || input.contains("save battery")
+    )
+
+    val isBatteryKnowledgeQuery = mentionsPowerConsumption ||
+      (mentionsBatteryOrCharging && isCausalOrAdvisoryBatteryQuery)
+
     // Contextual Follow-up: Additional Navigation Scenario on previous battery forecast
     if (session?.lastBatteryScenario != null &&
       (input.contains("ملاحة") || input.contains("الملاحة") || input.contains("ملاحه") || input.contains("خرائط") || input.contains("navigation") || input.contains("gps")) &&
@@ -307,7 +346,7 @@ object IntentParser {
     }
 
     // Time-Aware Battery Forecast: "كم ستتبقى من البطارية حتى المساء؟" / "هل ستكفي البطارية حتى الساعة السادسة؟"
-    if (com.example.core.intelligence.battery.BatteryTargetTimeExtractor.isBatteryForecastQuery(input)) {
+    if (!isBatteryKnowledgeQuery && com.example.core.intelligence.battery.BatteryTargetTimeExtractor.isBatteryForecastQuery(input)) {
       val target = com.example.core.intelligence.battery.BatteryTargetTimeExtractor.extractTargetTime(input)
       if (target != null) {
         val includesMusic = input.contains("موسيقى") || input.contains("موسيقي") ||
@@ -375,20 +414,45 @@ object IntentParser {
     val isForRingtone = input.contains("رنين") || input.contains("نغمه") || input.contains("مكالمات") || input.contains("ringtone") || input.contains("ring")
 
     // Contextual Intelligence Domain Queries (e.g. "هل اخرج الان؟" with outdoor departure reasoning)
-    val req = com.example.core.intelligence.ContextRequirementsRegistry.resolve(input)
-    if (req.domain != com.example.core.intelligence.IntentDomain.GENERAL &&
-      req.domain != com.example.core.intelligence.IntentDomain.WEATHER_ONLY &&
-      req.domain != com.example.core.intelligence.IntentDomain.DIRECT_COMMAND
-    ) {
-      return WeykyIntent.ContextualQueryIntent(rawQuery = rawInput, domain = req.domain)
+    if (!isBatteryKnowledgeQuery) {
+      val req = com.example.core.intelligence.ContextRequirementsRegistry.resolve(input)
+      if (req.domain != com.example.core.intelligence.IntentDomain.GENERAL &&
+        req.domain != com.example.core.intelligence.IntentDomain.WEATHER_ONLY &&
+        req.domain != com.example.core.intelligence.IntentDomain.DIRECT_COMMAND
+      ) {
+        return WeykyIntent.ContextualQueryIntent(rawQuery = rawInput, domain = req.domain)
+      }
     }
 
-    val isBatteryKnowledgeQuery = input.contains("حفاظ") || input.contains("الحفاظ") ||
-      input.contains("نصائح") || input.contains("نصايح") || input.contains("نصيحه") || input.contains("عمر البطاريه") ||
-      input.contains("اطاله") || input.contains("حمايه") || input.contains("توفير البطاريه") ||
-      input.contains("طرق توفير") || input.contains("كيف احافظ") || input.contains("صحه البطاريه") ||
-      input.contains("battery health") || input.contains("battery tips") ||
-      input.contains("battery lifespan") || input.contains("save battery") || input.contains("battery care")
+    val hasLiveBatteryTelemetrySignal = input == "battery" || input == "battery status" ||
+      input == "battery level" || input == "بطاريه" || input == "البطاريه" ||
+      input == "بطاريتي" || input == "حاله البطاريه" || input == "نسبه البطاريه" ||
+      input == "مستوي البطاريه" || input == "شحن البطاريه" || input == "حاله الشحن" ||
+      input.contains("نسبه") || input.startsWith("كم ") || input == "كم البطاريه" ||
+      input.contains("كم بطاريه") || input.contains("كم بطاريتي") || input.contains("كم الشحن") ||
+      input.contains("مستوي البطاريه") || input.contains("حاله البطاريه") ||
+      input.contains("حاله الشحن") || input.contains("وضع البطاريه") ||
+      input.contains("بطاريتي الان") || input.contains("ما بطاريتي") ||
+      input.contains("فحص البطاريه") || input.contains("افحص البطاريه") ||
+      input.contains("اقرا البطاريه") || input.contains("اعرض البطاريه") ||
+      input.contains("المتبقي") || input.contains("باقي") || input.contains("متبقي") ||
+      input.contains("يشحن") || input.contains("تشحن") ||
+      input.contains("متصل بالشاحن") || input.contains("متصله بالشاحن") ||
+      input.contains("موصول بالشاحن") || input.contains("موصوله بالشاحن") ||
+      input.contains("قيد الشحن") || input.contains("مشحون") || input.contains("مشحونه") ||
+      input.contains("في الشاحن") || input.contains("علي الشاحن") ||
+      input.contains("percent") || input.contains("percentage") ||
+      input.contains("battery level") || input.contains("battery status") ||
+      input.contains("how much battery") || input.contains("what is my battery") ||
+      input.contains("what's my battery") || input.contains("check battery") ||
+      input.contains("battery remaining") || input.contains("battery left") ||
+      input.contains("is it charging") || input.contains("is my phone charging") ||
+      input.contains("is the phone charging") || input.contains("plugged in") ||
+      input.contains("connected to charger")
+
+    val isLiveBatteryTelemetryRequest = mentionsBatteryOrCharging &&
+      !isCausalOrAdvisoryBatteryQuery &&
+      hasLiveBatteryTelemetrySignal
 
     val isHumanMemoryQuery = input.contains("ذاكرتي") || input.contains("بشريه") || input.contains("البشريه") ||
       input.contains("تقويه") || input.contains("تنشيط") || input.contains("تحسين") ||
@@ -409,7 +473,7 @@ object IntentParser {
     val isBiologicalOrKnowledgeDeviceQuery = input.contains("الجهاز الهضمي") || input.contains("الجهاز العصبي") ||
       input.contains("الجهاز التنفسي") || input.contains("الجهاز المناعي") || input.contains("جهاز المناعه") ||
       input.contains("الذكاء الاصطناعي") || input.contains("نوم") || input.contains("النوم") ||
-      isBatteryKnowledgeQuery
+      mentionsBatteryOrCharging || mentionsPowerConsumption || isBatteryKnowledgeQuery
 
     return when {
       // 1. Settings, Wifi, Bluetooth commands
@@ -523,15 +587,12 @@ object IntentParser {
         }
       }
 
-      // 7. Battery (status & settings vs battery care knowledge)
-      (input.contains("battery") || hasWord(input, "charge", "charging") ||
-       input.contains("بطاريه") || input.contains("البطاريه") || input.contains("شحن")) &&
-      !isBatteryKnowledgeQuery -> {
-        if (input.contains("setting") || input.contains("اعدادات") || input.contains("ضبط")) {
-          WeykyIntent.SettingsIntent(WeykyIntent.SettingsType.BATTERY)
-        } else {
-          WeykyIntent.BatteryIntent
-        }
+      // 7. Battery (live telemetry readout & battery settings vs explanatory/advisory battery knowledge)
+      mentionsBatteryOrCharging && (input.contains("setting") || input.contains("اعدادات") || input.contains("ضبط")) -> {
+        WeykyIntent.SettingsIntent(WeykyIntent.SettingsType.BATTERY)
+      }
+      isLiveBatteryTelemetryRequest -> {
+        WeykyIntent.BatteryIntent
       }
 
       // 8. Storage

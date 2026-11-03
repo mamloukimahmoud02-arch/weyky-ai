@@ -89,6 +89,44 @@ class KnowledgeSearchService(
             "سال", "مهمه", "سنه", "حاله", "عده", "مره", "قوه", "بنه", "حبه"
         )
 
+        /**
+         * Generic non-distinctive verbs/predicates that must not by themselves (when paired only
+         * with stop words) confer a high multi-word phrase match or supplemental single-token
+         * concept match on queries about a different subject (e.g. "كيف تعمل النجوم؟" or
+         * "كيف تعمل الجاذبية؟").
+         */
+        val GENERIC_NON_DISTINCTIVE_PREDICATE_TOKENS: Set<String> = setOf(
+            "تعمل", "يعمل", "اعمل", "نعمل", "عمل",
+            "تفكر", "يفكر", "افكر", "نفكر",
+            "تشتغل", "يشتغل",
+            "تكون", "يكون", "تتكون", "يتكون",
+            "تحدث", "يحدث",
+            "توجد", "يوجد",
+            "تؤثر", "يؤثر", "توثر", "يوثر",
+            "تغير", "يتغير",
+            "تحتاج", "يحتاج",
+            "تستخدم", "يستخدم",
+            "يمكن", "ممكن",
+            "work", "works", "working",
+            "think", "thinks", "thinking",
+            "happen", "happens",
+            "affect", "affects",
+            "cause", "causes"
+        )
+
+        fun isDistinctiveSemanticToken(
+            relaxedToken: String,
+            relaxedStem: String = LocalKnowledgeBase.stripArabicPrefixes(relaxedToken)
+        ): Boolean {
+            if (relaxedToken.isBlank() || relaxedToken in SeedKnowledgeCatalog.STOP_WORDS) return false
+            if (relaxedToken in GENERIC_NON_DISTINCTIVE_PREDICATE_TOKENS ||
+                relaxedStem in GENERIC_NON_DISTINCTIVE_PREDICATE_TOKENS
+            ) {
+                return false
+            }
+            return true
+        }
+
         const val ACCEPTANCE_THRESHOLD: Int = 80
 
         /**
@@ -543,7 +581,15 @@ class KnowledgeSearchService(
             else if (containsPhraseOnWordBoundary(strictQueryTokens, normQueryTokens, strictKwTokens, normKwTokens)) {
                 val exactStrictBonus = if (strictQuery.contains(strictKw)) 4 else 0
                 kwScore = if (normKwTokens.size >= 2) {
-                    130 + normKwTokens.size * 25 + normKw.length + exactStrictBonus
+                    val hasDistinctiveContentToken = contentKwIndices.any { kIdx ->
+                        val tok = normKwTokens.getOrElse(kIdx) { "" }
+                        isDistinctiveSemanticToken(tok)
+                    }
+                    if (hasDistinctiveContentToken) {
+                        130 + normKwTokens.size * 25 + normKw.length + exactStrictBonus
+                    } else {
+                        0
+                    }
                 } else {
                     val tokenLen = LocalKnowledgeBase.stripArabicPrefixes(normKwTokens[0]).length
                     if (tokenLen <= 2 && normKwTokens[0] != "ai") 40 else 95 + tokenLen + exactStrictBonus
@@ -551,7 +597,11 @@ class KnowledgeSearchService(
             }
             // 3. Order-independent multi-token match (lines 445-458)
             else if (contentKwIndices.size >= 2 && contentQueryIndices.isNotEmpty()) {
-                val allContentMatched = contentKwIndices.all { kIdx ->
+                val hasDistinctiveContentToken = contentKwIndices.any { kIdx ->
+                    val tok = normKwTokens.getOrElse(kIdx) { "" }
+                    isDistinctiveSemanticToken(tok)
+                }
+                val allContentMatched = hasDistinctiveContentToken && contentKwIndices.all { kIdx ->
                     val sKwTok = strictKwTokens.getOrElse(kIdx) { normKwTokens[kIdx] }
                     val nKwTok = normKwTokens[kIdx]
                     contentQueryIndices.any { qIdx ->
