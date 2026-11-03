@@ -1,0 +1,166 @@
+{
+  "packFormat": "WEYKY_KNOWLEDGE_PACK_V1",
+  "schemaVersion": 1,
+  "packId": "sample_science_pack_v1",
+  "packName": "WEYKY Science & Technology Expansion Pack V1",
+  "packVersion": 1,
+  "contentVersion": 1,
+  "sourceType": "BUNDLED_ASSET",
+  "packPriority": 120,
+  "description": "Official bilingual sample knowledge pack covering Quantum Computing, Renewable Solar Energy, and Crispr Gene Editing.",
+  "language": "bilingual",
+  "createdAt": 1710000000000,
+  "updatedAt": 1710000000000,
+  "topics": [
+    {
+      "topicId": "quantum_computing_basics",
+      "title": "الحوسبة الكمومية | Quantum Computing",
+      "arabicTitle": "أساسيات الحوسبة الكمومية",
+      "englishTitle": "Quantum Computing Fundamentals",
+      "category": "science_technology",
+      "topicOrderIndex": 0,
+      "priority": 120,
+      "contentVersion": 1,
+      "arabicSummary": "تعتمد الحوسبة الكمومية على الكيوبتات (Qubits) وظواهر التراكب والتشابك الكمومي لمعالجة المسائل المعقدة بسرعة تفوق الحواسيب الكلاسيكية في مجالات التشفير والمحاكاة الجزيئية.",
+      "englishSummary": "Quantum computing leverages qubits, superposition, and entanglement to solve complex optimization, cryptography, and molecular simulation problems exponentially faster than classical computers.",
+      "keywords": [
+        "الحوسبة الكمومية",
+        "حاسوب كمومي",
+        "الكيوبت",
+        "التراكب الكمومي",
+        "quantum computing",
+        "quantum computer",
+        "qubit",
+        "superposition"
+      ],
+      "suggestedFollowUps": [
+        "ما الفرق بين الكيوبت والبت التقليدي؟",
+        "ما أبرز تطبيقات الحوسبة الكمومية؟"
+      ],
+      "referenceTopicIds": [
+        "physics_universe",
+        "solar_photovoltaic_energy"
+      ],
+      "detail": {
+        "detailedArabic": "في الحواسيب التقليدية يتم تمثيل البيانات عبر بتات ثنائية (0 أو 1)، بينما يستخدم الحاسوب الكمومي الكيوبت (Qubit) القادر على التواجد في حالة تراكب خطي للحالتين معاً. وعند تشابك عدة كيوبتات، تتضاعف قدرة المعالجة المتوازية، مما يتيح محاكاة التفاعلات الكيميائية الدقيقة وتطوير مواد فائقة التوصيل.",
+        "detailedEnglish": "Unlike classical bits that hold either 0 or 1, a quantum bit (qubit) can exist in a linear superposition of both states simultaneously. When multiple qubits become entangled, quantum processors can evaluate vast state spaces in parallel for material discovery and cryptography.",
+        "relatedTopicIds": [
+          "physics_universe",
+          "solar_photovoltaic_energy"
+        ],
+        "examples": [
+          "خوارزمية شور لتحليل الأعداد الكبيرة في التشفير",
+          "خوارزمية غروفر لتسريع البحث في قواعد البيانات غير المرتبة",
+          "محاكاة جزيئات الأدوية والبطاريات المتقدمة"
+        ],
+        "lastReviewed": 1710000000000
+      },
+      "followUpBranches": [
+        {
+          "branchId": "quantum_qubit_vs_bit",
+          "priorityOrder": 1,
+          "matchMode": "SUBSTRING_CONTAINS",
+          "triggerKeywords": [
+            "الفرق",
+            "كيوبت",
+            "بت",
+            "qubit",
+            "difference",
+            "bit"
+          ],
+          "responseArabic": "البت الكلاسيكي يمثل إما 0 أو 1 في اللحظة الواحدة، أما الكيوبت فيستفيد من التراكب الكمومي ليمثل مزيجاً احتمالياً من 0 و1 معاً حتى لحظة القياس.",
+          "responseEnglish": "A classical bit represents strictly 0 or 1 at any instant, whereas a qubit uses quantum superposition to represent a coherent combination of 0 and 1 until measured.",
+          "actionableOptions": [
+            {
+              "labelArabic": "تطبيقات الحوسبة الكمومية",
+              "labelEnglish": "Quantum Applications",
+              "queryText": "ما أبرز تطبيقات الحوسبة الكمومية؟"
+            }
+          ],
+          "isDefault": false
+        },
+        {
+          "branchId": "quantum_default_branch",
+          "priorityOrder": 2,
+          "matchMode": "DEFAULT_FALLBACK",
+          "triggerKeywords": [],
+          "responseArabic": "تُعد الحوسبة الكمومية قفزة نوعية في فيزياء المعلومات؛ إذ تجمع بين ميكانيكا الكم وعلوم الحاسوب لحل مسائل مستعصية على المعالجات الرقمية المعتادة.",
+          "responseEnglish": "Quantum computing bridges quantum mechanics and information science to tackle computational problems intractable for conventional processors.",
+          "actionableOptions": [
+            {
+              "labelArabic": "الفرق بين الكيوبت والبت",
+              "labelEnglish": "Qubit vs Bit",
+              "queryText": "ما الفرق بين الكيوبت والبت التقليدي؟"
+            }
+          ],
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "topicId": "solar_photovoltaic_energy",
+      "title": "الطاقة الشمسية الكهروضوئية | Solar Photovoltaic Energy",
+      "arabicTitle": "أنظمة الطاقة الشمسية الكهروضوئية",
+      "englishTitle": "Solar Photovoltaic Energy Systems",
+      "category": "clean_energy",
+      "topicOrderIndex": 1,
+      "priority": 120,
+      "contentVersion": 1,
+      "arabicSummary": "تحوّل الألواح الشمسية الكهروضوئية ضوء الشمس مباشرة إلى تيار كهربائي باستخدام خلايا أشباه الموصلات مثل السيليكون بفضل التأثير الكهروضوئي.",
+      "englishSummary": "Solar photovoltaic (PV) panels convert sunlight directly into electricity using semiconductor cells such as silicon through the photovoltaic effect.",
+      "keywords": [
+        "الطاقة الشمسية",
+        "الألواح الشمسية",
+        "الخلايا الكهروضوئية",
+        "solar energy",
+        "solar panels",
+        "photovoltaic cells"
+      ],
+      "suggestedFollowUps": [
+        "كيف تعمل الخلية الكهروضوئية؟",
+        "ما كفاءة الألواح الشمسية الحديثة؟"
+      ],
+      "referenceTopicIds": [
+        "battery_care",
+        "quantum_computing_basics"
+      ],
+      "detail": {
+        "detailedArabic": "تتكون الخلية الكهروضوئية من طبقتين من السيليكون المعالج (من النوع N والنوع P) تشكلان وصلة ثنائية. عند سقوط الفوتونات الضوئية على الخلية، تتحرر الإلكترونات وتتدفق عبر الدائرة الخارجية مولدة تياراً مستمراً يتم تحويله لاحقاً عبر العاكس (Inverter) إلى تيار متردد.",
+        "detailedEnglish": "A photovoltaic cell consists of P-type and N-type semiconductor layers forming a p-n junction. Incoming photons excite electrons across the bandgap, generating direct current (DC) that an inverter converts into alternating current (AC).",
+        "relatedTopicIds": [
+          "battery_care",
+          "quantum_computing_basics"
+        ],
+        "examples": [
+          "محطات الطاقة الشمسية واسعة النطاق في المناطق الصحراوية",
+          "أنظمة الأسطح المنزلية المرتبطة بالشبكة أو المدعومة ببطاريات ليثيوم"
+        ],
+        "lastReviewed": 1710000000000
+      },
+      "followUpBranches": [
+        {
+          "branchId": "solar_efficiency_branch",
+          "priorityOrder": 1,
+          "matchMode": "SUBSTRING_CONTAINS",
+          "triggerKeywords": [
+            "كفاءة",
+            "نسبة",
+            "efficiency",
+            "how work",
+            "تعمل"
+          ],
+          "responseArabic": "تتراوح كفاءة الألواح الشمسية التجارية الحديثة بين 20% و24%، بينما تتجاوز الخلايا الترادفية المتطورة المعتمدة على البيروفسكايت والسيليكون حاجز 29% في المختبرات.",
+          "responseEnglish": "Modern commercial silicon solar panels achieve 20% to 24% efficiency, while perovskite-silicon tandem cells exceed 29% in laboratory benchmarks.",
+          "actionableOptions": [
+            {
+              "labelArabic": "العناية بالبطارية",
+              "labelEnglish": "Battery Care",
+              "queryText": "كيف أحافظ على البطارية؟"
+            }
+          ],
+          "isDefault": false
+        }
+      ]
+    }
+  ]
+}

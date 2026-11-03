@@ -2,6 +2,7 @@ package com.example.core.intelligence.knowledge.validation
 
 import com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog
 import com.example.core.intelligence.knowledge.db.converter.KnowledgeTypeConverters
+import com.example.core.intelligence.knowledge.db.dao.KnowledgePriorityAndWinnerPolicy
 import com.example.core.intelligence.knowledge.db.dao.TopicStorageBundle
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeFollowUpBranchEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordEntity
@@ -193,6 +194,14 @@ object KnowledgeValidator {
                     category = ValidationIssueCategory.MISSING_REFERENCE,
                     field = "topic.packId",
                     message = "Topic '${topic.topicId}' references packId '${topic.packId}' which does not match pack '${pack.packId}'.",
+                    recordIdentifier = "${topic.topicId}@${topic.packId}"
+                )
+            }
+            if (topic.packPriority != pack.packPriority) {
+                issues += ValidationIssue(
+                    category = ValidationIssueCategory.VALIDATION_ERROR,
+                    field = "topic.packPriority",
+                    message = "Topic '${topic.topicId}' packPriority (${topic.packPriority}) does not match pack '${pack.packId}' priority (${pack.packPriority}).",
                     recordIdentifier = "${topic.topicId}@${topic.packId}"
                 )
             }
@@ -456,6 +465,14 @@ object KnowledgeValidator {
                 recordIdentifier = pack.packId
             )
         }
+        if (!KnowledgePriorityAndWinnerPolicy.isValidLogicalPriority(pack.packPriority)) {
+            issues += ValidationIssue(
+                category = ValidationIssueCategory.VALIDATION_ERROR,
+                field = "pack.packPriority",
+                message = "packPriority (${pack.packPriority}) must be >= ${KnowledgePriorityAndWinnerPolicy.MIN_LOGICAL_PRIORITY}.",
+                recordIdentifier = pack.packId
+            )
+        }
         if (pack.topicCount < 0) {
             issues += ValidationIssue(
                 category = ValidationIssueCategory.VALIDATION_ERROR,
@@ -515,6 +532,14 @@ object KnowledgeValidator {
                 category = ValidationIssueCategory.VALIDATION_ERROR,
                 field = "topic.sourceType",
                 message = "Invalid sourceType '${header.sourceType}'.",
+                recordIdentifier = idTag
+            )
+        }
+        if (!KnowledgePriorityAndWinnerPolicy.isValidLogicalPriority(header.packPriority)) {
+            issues += ValidationIssue(
+                category = ValidationIssueCategory.VALIDATION_ERROR,
+                field = "topic.packPriority",
+                message = "packPriority (${header.packPriority}) must be >= ${KnowledgePriorityAndWinnerPolicy.MIN_LOGICAL_PRIORITY}.",
                 recordIdentifier = idTag
             )
         }
@@ -728,11 +753,28 @@ object KnowledgeValidator {
                 message = "relatedTopicIdsJson is not a valid JSON array of non-blank strings.",
                 recordIdentifier = idTag
             )
-        } else if (referenceTopicIds != null) {
+        } else {
             val converters = KnowledgeTypeConverters()
             val relatedIds = converters.toStringList(detail.relatedTopicIdsJson)
+            val seenRelatedIds = HashSet<String>(relatedIds.size)
             for (relId in relatedIds) {
-                if (relId !in referenceTopicIds) {
+                if (relId == detail.topicId) {
+                    issues += ValidationIssue(
+                        category = ValidationIssueCategory.MISSING_REFERENCE,
+                        field = "detail.relatedTopicIdsJson",
+                        message = "Topic '${detail.topicId}' cannot reference itself in relatedTopicIds.",
+                        recordIdentifier = idTag
+                    )
+                }
+                if (!seenRelatedIds.add(relId)) {
+                    issues += ValidationIssue(
+                        category = ValidationIssueCategory.DUPLICATE_DATA,
+                        field = "detail.relatedTopicIdsJson",
+                        message = "Duplicate relatedTopicId '$relId' in topic '${detail.topicId}'.",
+                        recordIdentifier = idTag
+                    )
+                }
+                if (referenceTopicIds != null && relId !in referenceTopicIds) {
                     issues += ValidationIssue(
                         category = ValidationIssueCategory.MISSING_REFERENCE,
                         field = "detail.relatedTopicIdsJson",

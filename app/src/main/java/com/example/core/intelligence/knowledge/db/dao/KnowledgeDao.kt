@@ -1,17 +1,28 @@
 package com.example.core.intelligence.knowledge.db.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeFollowUpBranchEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeKeywordTokenEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgePackMetadataEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicDetailEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicHeaderEntity
+
+/**
+ * Lightweight projection for checking cross-topic reference integrity without loading heavy detail text.
+ */
+data class ActiveTopicRelatedRefsProjection(
+    @ColumnInfo(name = "topic_id") val topicId: String,
+    @ColumnInfo(name = "pack_id") val packId: String,
+    @ColumnInfo(name = "related_topic_ids_json") val relatedTopicIdsJson: String
+)
 
 /**
  * Bundle holding a keyword and its ordered tokens for atomic insertion into Room.
@@ -30,6 +41,145 @@ data class TopicStorageBundle(
     val detail: KnowledgeTopicDetailEntity?,
     val followUpBranches: List<KnowledgeFollowUpBranchEntity>
 )
+
+/**
+ * Centralized, deterministic policy for Knowledge Pack priority encoding/decoding,
+ * enabled-state detection, and active topic winner selection.
+ *
+ * Enforces one consistent precedence order across SQL queries, DAO winner recomputation,
+ * and in-memory snapshot construction:
+ * 1. Canonical Core Seed protection (`pack_id == "core_seed_pack" && is_core_topic && topic_id in PROTECTED_CORE_TOPIC_IDS`)
+ * 2. Highest enabled `pack_priority DESC` (`pack_priority >= 0`)
+ * 3. Highest `content_version DESC`
+ * 4. Deterministic lexicographical tie-breaker `pack_id ASC`
+ *
+ * Disabled packs are represented via negative priority encoding `-(logicalPriority + 1)`
+ * using 64-bit intermediate arithmetic so boundary values (`0`, `Int.MAX_VALUE`, `Int.MIN_VALUE`)
+ * never overflow.
+ */
+object KnowledgePriorityAndWinnerPolicy {
+
+    const val MIN_LOGICAL_PRIORITY: Int = 0
+    const val MAX_LOGICAL_PRIORITY: Int = Int.MAX_VALUE
+
+    fun isValidLogicalPriority(logicalPriority: Int): Boolean =
+        logicalPriority >= MIN_LOGICAL_PRIORITY
+
+    fun requireValidLogicalPriority(logicalPriority: Int, paramName: String = "priority"): Int {
+        require(isValidLogicalPriority(logicalPriority)) {
+            "$paramName ($logicalPriority) must be >= $MIN_LOGICAL_PRIORITY."
+        }
+        return logicalPriority
+    }
+
+    fun isStoredPriorityEnabled(storedPriority: Int): Boolean =
+        storedPriority >= MIN_LOGICAL_PRIORITY
+
+    fun isStoredPriorityDisabled(storedPriority: Int): Boolean =
+        storedPriority < MIN_LOGICAL_PRIORITY
+
+    /**
+     * Encodes a non-negative [logicalPriority] (`0..Int.MAX_VALUE`) into its disabled negative
+     * storage representation `-(logicalPriority + 1)` without 32-bit signed integer overflow.
+     */
+    fun encodeDisabledPriority(logicalPriority: Int): Int {
+        requireValidLogicalPriority(logicalPriority, "logicalPriority")
+        return (-(logicalPriority.toLong() + 1L)).toInt()
+    }
+
+    /**
+     * Decodes any stored priority (enabled `>= 0` or disabled `< 0`) back into its non-negative
+     * logical priority (`0..Int.MAX_VALUE`) without 32-bit signed integer overflow.
+     */
+    fun decodeLogicalPriority(storedPriority: Int): Int {
+        return if (isStoredPriorityEnabled(storedPriority)) {
+            storedPriority
+        } else {
+            (-(storedPriority.toLong() + 1L)).toInt()
+        }
+    }
+
+    /**
+     * Computes the stored priority value for [logicalPriority] while preserving the target
+     * [enabled] state.
+     */
+    fun encodeStoredPriority(logicalPriority: Int, enabled: Boolean): Int {
+        requireValidLogicalPriority(logicalPriority, "logicalPriority")
+        return if (enabled) {
+            logicalPriority
+        } else {
+            encodeDisabledPriority(logicalPriority)
+        }
+    }
+
+    /**
+     * Returns true if [header] is an authoritative Core Seed topic row belonging to `core_seed_pack`.
+     */
+    fun isCanonicalCoreSeedTopic(header: KnowledgeTopicHeaderEntity): Boolean =
+        header.packId == SeedKnowledgeCatalog.CORE_SEED_PACK_ID &&
+            header.isCoreTopic &&
+            SeedKnowledgeCatalog.isProtectedCoreTopicId(header.topicId)
+
+    /**
+     * Comparator ordering candidate topic headers from highest precedence (winner first) to lowest:
+     * 1. Canonical Core Seed topic (`true` before `false`)
+     * 2. Higher `packPriority` (`DESC`)
+     * 3. Higher `contentVersion` (`DESC`)
+     * 4. Lexicographically smaller `packId` (`ASC`)
+     */
+    val WINNER_HEADER_COMPARATOR: Comparator<KnowledgeTopicHeaderEntity> =
+        Comparator { a, b ->
+            val aCore = isCanonicalCoreSeedTopic(a)
+            val bCore = isCanonicalCoreSeedTopic(b)
+            if (aCore != bCore) {
+                return@Comparator if (aCore) -1 else 1
+            }
+            val priorityCmp = b.packPriority.compareTo(a.packPriority)
+            if (priorityCmp != 0) {
+                return@Comparator priorityCmp
+            }
+            val contentVersionCmp = b.contentVersion.compareTo(a.contentVersion)
+            if (contentVersionCmp != 0) {
+                return@Comparator contentVersionCmp
+            }
+            a.packId.compareTo(b.packId)
+        }
+
+    /**
+     * Selects the single winning [KnowledgeTopicHeaderEntity] from [candidates], ignoring any
+     * disabled candidate (`packPriority < 0`). Independent of input iteration order.
+     */
+    fun selectWinningTopicHeader(
+        candidates: Iterable<KnowledgeTopicHeaderEntity>
+    ): KnowledgeTopicHeaderEntity? {
+        return candidates
+            .asSequence()
+            .filter { isStoredPriorityEnabled(it.packPriority) }
+            .minWithOrNull(WINNER_HEADER_COMPARATOR)
+    }
+
+    /**
+     * Filters out disabled topic bundles (`packPriority < 0`) and resolves any competing bundles
+     * for the same `topicId` using [WINNER_HEADER_COMPARATOR], ensuring in-memory snapshot
+     * construction always agrees with database winner selection regardless of bundle order.
+     */
+    fun selectWinningTopicBundles(
+        bundles: Iterable<TopicStorageBundle>
+    ): List<TopicStorageBundle> {
+        val winningByTopicId = LinkedHashMap<String, TopicStorageBundle>()
+        for (bundle in bundles) {
+            if (!isStoredPriorityEnabled(bundle.header.packPriority)) continue
+            val topicId = bundle.header.topicId
+            val existing = winningByTopicId[topicId]
+            if (existing == null ||
+                WINNER_HEADER_COMPARATOR.compare(bundle.header, existing.header) < 0
+            ) {
+                winningByTopicId[topicId] = bundle
+            }
+        }
+        return winningByTopicId.values.toList()
+    }
+}
 
 @Dao
 interface KnowledgeDao {
@@ -278,6 +428,36 @@ interface KnowledgeDao {
     )
     suspend fun getActiveTopicDetail(topicId: String): KnowledgeTopicDetailEntity?
 
+    /**
+     * Lightweight projection reading only `topic_id`, `pack_id`, and `related_topic_ids_json`
+     * for active winning topics that declare related references, without loading heavy
+     * `detailed_arabic` or `detailed_english` columns into memory.
+     */
+    @Query(
+        """
+        SELECT d.topic_id, d.pack_id, d.related_topic_ids_json
+        FROM knowledge_topic_details AS d
+        INNER JOIN knowledge_topics AS h
+            ON d.topic_id = h.topic_id AND d.pack_id = h.pack_id
+        WHERE h.is_active_winner = 1 AND d.related_topic_ids_json != '[]'
+        """
+    )
+    suspend fun getActiveTopicRelatedRefsProjections(): List<ActiveTopicRelatedRefsProjection>
+
+    /**
+     * Returns all distinct `topic_id`s present in `knowledge_topics` that currently have no
+     * active winning row (`is_active_winner = 1`), such as topics belonging only to deactivated packs.
+     */
+    @Query(
+        """
+        SELECT DISTINCT topic_id FROM knowledge_topics
+        WHERE topic_id NOT IN (
+            SELECT topic_id FROM knowledge_topics WHERE is_active_winner = 1
+        )
+        """
+    )
+    suspend fun getInactiveOnlyTopicIds(): List<String>
+
     // =========================================================================
     // 5. Follow-up Branches Operations
     // =========================================================================
@@ -390,7 +570,7 @@ interface KnowledgeDao {
     suspend fun recalculateActiveWinnerForTopic(topicId: String) {
         val versions = getAllTopicVersionsForTopicId(topicId)
         clearActiveWinnerForTopic(topicId)
-        val winner = versions.firstOrNull { it.packPriority >= 0 } ?: return
+        val winner = KnowledgePriorityAndWinnerPolicy.selectWinningTopicHeader(versions) ?: return
         markActiveWinnerForTopic(topicId, winner.packId)
     }
 
@@ -488,7 +668,12 @@ interface KnowledgeDao {
         }
 
         for (bundle in topics) {
-            upsertTopicBundleWithoutWinnerRecalc(bundle)
+            val synchronizedBundle = if (bundle.header.packPriority != pack.packPriority) {
+                bundle.copy(header = bundle.header.copy(packPriority = pack.packPriority))
+            } else {
+                bundle
+            }
+            upsertTopicBundleWithoutWinnerRecalc(synchronizedBundle)
         }
 
         recalculateActiveWinnersForTopicsTransactional(allAffectedTopicIds)
@@ -502,16 +687,13 @@ interface KnowledgeDao {
      */
     @Transaction
     suspend fun deactivatePackTransactional(packId: String): Set<String> {
-        require(packId != "core_seed_pack") {
+        require(packId != SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
             "Protected core_seed_pack cannot be deactivated."
         }
         val existingPack = getPackMetadataById(packId) ?: return emptySet()
         val affectedTopicIds = getTopicIdsByPack(packId).toSet()
-        val deactivatedPriority = if (existingPack.packPriority >= 0) {
-            -(existingPack.packPriority + 1)
-        } else {
-            existingPack.packPriority
-        }
+        val logicalPriority = KnowledgePriorityAndWinnerPolicy.decodeLogicalPriority(existingPack.packPriority)
+        val deactivatedPriority = KnowledgePriorityAndWinnerPolicy.encodeDisabledPriority(logicalPriority)
         updatePackPriorityRaw(packId, deactivatedPriority)
         updateTopicHeadersPriorityByPackRaw(packId, deactivatedPriority)
         clearActiveWinnersByPackRaw(packId)
@@ -528,15 +710,13 @@ interface KnowledgeDao {
         packId: String,
         restoredPriorityOverride: Int? = null
     ): Set<String> {
+        require(packId != SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
+            "Protected core_seed_pack cannot be modified via reactivation."
+        }
         val existingPack = getPackMetadataById(packId) ?: return emptySet()
-        val restoredPriority = restoredPriorityOverride ?: if (existingPack.packPriority < 0) {
-            -(existingPack.packPriority + 1)
-        } else {
-            existingPack.packPriority
-        }
-        require(restoredPriority >= 0) {
-            "Restored pack priority ($restoredPriority) must be >= 0."
-        }
+        val restoredPriority = restoredPriorityOverride
+            ?: KnowledgePriorityAndWinnerPolicy.decodeLogicalPriority(existingPack.packPriority)
+        KnowledgePriorityAndWinnerPolicy.requireValidLogicalPriority(restoredPriority, "restoredPriority")
         val affectedTopicIds = getTopicIdsByPack(packId).toSet()
         updatePackPriorityRaw(packId, restoredPriority)
         updateTopicHeadersPriorityByPackRaw(packId, restoredPriority)
@@ -545,24 +725,30 @@ interface KnowledgeDao {
     }
 
     /**
-     * Atomically updates a non-seed pack's priority and recomputes active winners across
-     * all affected topic IDs.
+     * Atomically updates a non-seed pack's logical priority while strictly preserving its current
+     * enabled/disabled state, and recomputes active winners across all affected topic IDs.
      */
     @Transaction
     suspend fun updatePackPriorityTransactional(
         packId: String,
         newPriority: Int
     ): Set<String> {
-        require(packId != "core_seed_pack") {
+        require(packId != SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
             "Protected core_seed_pack priority cannot be changed."
         }
-        require(newPriority >= 0) {
-            "Active pack priority ($newPriority) must be >= 0."
-        }
-        getPackMetadataById(packId) ?: return emptySet()
+        KnowledgePriorityAndWinnerPolicy.requireValidLogicalPriority(newPriority, "newPriority")
+        val existingPack = getPackMetadataById(packId) ?: return emptySet()
         val affectedTopicIds = getTopicIdsByPack(packId).toSet()
-        updatePackPriorityRaw(packId, newPriority)
-        updateTopicHeadersPriorityByPackRaw(packId, newPriority)
+        val isCurrentlyEnabled = KnowledgePriorityAndWinnerPolicy.isStoredPriorityEnabled(existingPack.packPriority)
+        val targetStoredPriority = KnowledgePriorityAndWinnerPolicy.encodeStoredPriority(
+            logicalPriority = newPriority,
+            enabled = isCurrentlyEnabled
+        )
+        updatePackPriorityRaw(packId, targetStoredPriority)
+        updateTopicHeadersPriorityByPackRaw(packId, targetStoredPriority)
+        if (!isCurrentlyEnabled) {
+            clearActiveWinnersByPackRaw(packId)
+        }
         recalculateActiveWinnersForTopicsTransactional(affectedTopicIds)
         return affectedTopicIds
     }
@@ -574,7 +760,7 @@ interface KnowledgeDao {
      */
     @Transaction
     suspend fun deletePackAndRecalculateWinnersTransactional(packId: String): Int {
-        require(packId != "core_seed_pack") {
+        require(packId != SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
             "Protected core_seed_pack cannot be deleted."
         }
         val affectedTopicIds = getTopicIdsByPack(packId).distinct()

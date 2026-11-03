@@ -3,6 +3,7 @@ package com.example.core.intelligence.knowledge.search
 import com.example.core.intelligence.conversation.LocalKnowledgeBase
 import com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog
 import com.example.core.intelligence.knowledge.catalog.SeedTopicCatalogEntry
+import com.example.core.intelligence.knowledge.db.dao.KnowledgePriorityAndWinnerPolicy
 import com.example.core.intelligence.knowledge.db.dao.TopicStorageBundle
 
 /**
@@ -211,7 +212,12 @@ class InMemorySearchSnapshot private constructor(
             require(knowledgeGeneration > 0L) { "knowledgeGeneration must be > 0" }
             require(bundles.isNotEmpty()) { "Cannot build InMemorySearchSnapshot from empty bundles" }
 
-            val sortedBundles = bundles.sortedWith(
+            val winningBundles = KnowledgePriorityAndWinnerPolicy.selectWinningTopicBundles(bundles)
+            require(winningBundles.isNotEmpty()) {
+                "Cannot build InMemorySearchSnapshot when no enabled winning topic bundles exist"
+            }
+
+            val sortedBundles = winningBundles.sortedWith(
                 compareBy<TopicStorageBundle> { it.header.topicOrderIndex }
                     .thenBy { it.header.topicId }
             )

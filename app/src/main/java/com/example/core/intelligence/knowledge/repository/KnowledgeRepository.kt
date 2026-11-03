@@ -13,10 +13,16 @@ import com.example.core.intelligence.knowledge.db.WeykyKnowledgeDatabase
 import com.example.core.intelligence.knowledge.db.converter.KnowledgeTypeConverters
 import com.example.core.intelligence.knowledge.db.dao.KeywordWithTokensBundle
 import com.example.core.intelligence.knowledge.db.dao.KnowledgeDao
+import com.example.core.intelligence.knowledge.db.dao.KnowledgePriorityAndWinnerPolicy
 import com.example.core.intelligence.knowledge.db.dao.TopicStorageBundle
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeFollowUpBranchEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgePackMetadataEntity
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicDetailEntity
+import com.example.core.intelligence.knowledge.importer.KnowledgePackImportLimits
+import com.example.core.intelligence.knowledge.importer.KnowledgePackImportResult
+import com.example.core.intelligence.knowledge.importer.KnowledgePackImportStatus
+import com.example.core.intelligence.knowledge.importer.KnowledgePackImporter
+import com.example.core.intelligence.knowledge.importer.SnapshotRefreshState
 import com.example.core.intelligence.knowledge.search.ActiveTopicIdentity
 import com.example.core.intelligence.knowledge.search.InMemorySearchSnapshot
 import com.example.core.intelligence.knowledge.search.KnowledgeSearchResult
@@ -25,6 +31,7 @@ import com.example.core.intelligence.knowledge.search.ScoredTopicCandidate
 import com.example.core.intelligence.knowledge.validation.KnowledgeValidator
 import com.example.core.intelligence.knowledge.validation.ValidationIssue
 import kotlinx.coroutines.CoroutineDispatcher
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -1096,7 +1103,9 @@ class KnowledgeRepository(
                     val dao = db.knowledgeDao()
                     // Verify the header in Room still matches the requested packId and contentVersion
                     val storedHeader = dao.getTopicHeaderByIdAndPack(identity.topicId, identity.packId)
-                    if (storedHeader == null || storedHeader.packPriority < 0) {
+                    if (storedHeader == null ||
+                        !KnowledgePriorityAndWinnerPolicy.isStoredPriorityEnabled(storedHeader.packPriority)
+                    ) {
                         return@withLock TopicDetailLoadResult(
                             topicId = canonicalId,
                             identity = identity,
@@ -1412,6 +1421,88 @@ class KnowledgeRepository(
         dao.upsertPackWithTopicsTransactional(
             pack = expectedPack,
             topics = seedBundles
+        )
+    }
+
+    internal suspend fun ensureCoreSeedPersistedInDatabase(): Boolean = withContext(ioDispatcher) {
+        val db = databaseRef.get() ?: return@withContext false
+        runCatching {
+            ensureCoreSeedPersistedIdempotently(db.knowledgeDao())
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Creates a [KnowledgePackImporter] bound to this repository and its attached [WeykyKnowledgeDatabase].
+     */
+    fun createKnowledgePackImporter(
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImporter {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        return KnowledgePackImporter(
+            database = db,
+            repository = this,
+            limits = limits,
+            converters = converters,
+            ioDispatcher = ioDispatcher
+        )
+    }
+
+    /**
+     * Imports a `WEYKY_KNOWLEDGE_PACK_V1` JSON string via [KnowledgePackImporter] on [ioDispatcher].
+     */
+    suspend fun importKnowledgePackFromJsonString(
+        json: String,
+        expectedSha256: String? = null,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImportResult = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: return@withContext KnowledgePackImportResult(
+                status = KnowledgePackImportStatus.STORAGE_FAILURE,
+                snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                errors = listOf("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+            )
+        createKnowledgePackImporter(limits).importFromJsonString(
+            json = json,
+            expectedSha256 = expectedSha256
+        )
+    }
+
+    /**
+     * Imports a `WEYKY_KNOWLEDGE_PACK_V1` from an [InputStream] via [KnowledgePackImporter] on [ioDispatcher].
+     */
+    suspend fun importKnowledgePackFromInputStream(
+        inputStream: InputStream,
+        expectedSha256: String? = null,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImportResult = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: return@withContext KnowledgePackImportResult(
+                status = KnowledgePackImportStatus.STORAGE_FAILURE,
+                snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                errors = listOf("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+            )
+        createKnowledgePackImporter(limits).importFromInputStream(
+            inputStream = inputStream,
+            expectedSha256 = expectedSha256
+        )
+    }
+
+    /**
+     * Imports a `WEYKY_KNOWLEDGE_PACK_V1` from an Android asset via [KnowledgePackImporter] on [ioDispatcher].
+     */
+    suspend fun importKnowledgePackFromAsset(
+        context: Context,
+        assetPath: String,
+        expectedSha256: String? = null,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImportResult = withContext(ioDispatcher) {
+        attachDatabaseIfAbsent(WeykyKnowledgeDatabase.getInstance(context.applicationContext))
+        createKnowledgePackImporter(limits).importFromAsset(
+            context = context,
+            assetPath = assetPath,
+            expectedSha256 = expectedSha256
         )
     }
 
