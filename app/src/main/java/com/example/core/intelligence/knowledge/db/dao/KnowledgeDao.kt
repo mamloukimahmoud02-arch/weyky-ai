@@ -263,6 +263,20 @@ interface KnowledgeDao {
     @Query(
         """
         SELECT * FROM knowledge_topics
+        WHERE topic_id IN (:topicIds)
+        ORDER BY
+            topic_id ASC,
+            CASE WHEN pack_id = 'core_seed_pack' AND is_core_topic = 1 THEN 1 ELSE 0 END DESC,
+            pack_priority DESC,
+            content_version DESC,
+            pack_id ASC
+        """
+    )
+    suspend fun getAllTopicVersionsForTopicIds(topicIds: List<String>): List<KnowledgeTopicHeaderEntity>
+
+    @Query(
+        """
+        SELECT * FROM knowledge_topics
         WHERE pack_id = :packId
         ORDER BY topic_order_index ASC, topic_id ASC
         """

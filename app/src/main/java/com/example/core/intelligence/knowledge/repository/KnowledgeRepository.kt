@@ -995,6 +995,114 @@ class KnowledgeRepository(
     }
 
     // =========================================================================
+    // Read-Only Knowledge Pack Discovery & Inspection APIs (Phase 2B.4.2C.1)
+    // =========================================================================
+
+    /**
+     * Returns all installed knowledge packs from the database in a deterministic order
+     * (`enabled DESC`, `logicalPriority DESC`, `packVersion DESC`, `packId ASC`).
+     *
+     * Guarantees:
+     * 1. Strictly read-only: never modifies database records, pack priorities, enabled states,
+     *    caches, or the active [InMemorySearchSnapshot].
+     * 2. Decodes disabled negative priorities via [KnowledgePriorityAndWinnerPolicy.decodeLogicalPriority]
+     *    and determines enabled state via [KnowledgePriorityAndWinnerPolicy.isStoredPriorityEnabled].
+     * 3. Returns an empty list if no database is attached or no packs are installed.
+     */
+    suspend fun getInstalledPacks(): List<InstalledKnowledgePackSummary> =
+        withContext(ioDispatcher) {
+            initializationMutex.withLock {
+                val db = databaseRef.get() ?: return@withLock emptyList()
+                val dao = db.knowledgeDao()
+                db.withTransaction {
+                    val storedPacks = dao.getAllPackMetadataOrdered()
+                    KnowledgePackReadModelMapper.buildInstalledPackSummaries(storedPacks)
+                }
+            }
+        }
+
+    /**
+     * Returns read-only details and per-topic winner/shadowed/disabled statuses for the installed
+     * knowledge pack identified by [packId], or `null` if [packId] is not installed.
+     *
+     * Guarantees:
+     * 1. Strictly read-only: never modifies database records, caches, or the active snapshot.
+     * 2. Uses database state as the authoritative source of truth and evaluates topic winners
+     *    through [KnowledgePriorityAndWinnerPolicy.selectWinningTopicHeader] rather than relying
+     *    on a potentially stale in-memory snapshot.
+     * 3. Executes bounded bulk header queries (`getPackMetadataById`, `getTopicHeadersByPackOrdered`,
+     *    and bulk `getAllTopicVersionsForTopicIds`) inside a single consistent read transaction
+     *    without N+1 per-topic queries.
+     * 4. Never loads heavy `knowledge_topic_details` or `knowledge_followup_branches` records and
+     *    never populates [KnowledgeCache.detailCache].
+     */
+    suspend fun getInstalledPackDetails(
+        packId: String
+    ): InstalledKnowledgePackDetails? =
+        withContext(ioDispatcher) {
+            val cleanPackId = packId.trim()
+            if (cleanPackId.isEmpty()) return@withContext null
+
+            initializationMutex.withLock {
+                val db = databaseRef.get() ?: return@withLock null
+                val dao = db.knowledgeDao()
+                db.withTransaction {
+                    val packMeta = dao.getPackMetadataById(cleanPackId) ?: return@withTransaction null
+                    val packTopicHeaders = dao.getTopicHeadersByPackOrdered(cleanPackId)
+                    val distinctTopicIds = packTopicHeaders.map { it.topicId }.distinct()
+                    val allCompetingHeaders = if (distinctTopicIds.isEmpty()) {
+                        emptyList()
+                    } else {
+                        distinctTopicIds.chunked(500).flatMap { chunk ->
+                            dao.getAllTopicVersionsForTopicIds(chunk)
+                        }
+                    }
+                    KnowledgePackReadModelMapper.buildInstalledPackDetails(
+                        packEntity = packMeta,
+                        packTopicHeaders = packTopicHeaders,
+                        allCompetingTopicHeaders = allCompetingHeaders
+                    )
+                }
+            }
+        }
+
+    /**
+     * Returns all installed candidate versions across all packs for [topicId], ordered
+     * deterministically and with [TopicVersionCandidateStatus.isCurrentWinner] resolved
+     * strictly via [KnowledgePriorityAndWinnerPolicy.selectWinningTopicHeader].
+     *
+     * Guarantees:
+     * 1. Strictly read-only: never modifies database records, caches, or the active snapshot.
+     * 2. Reads candidate headers directly from the database inside a consistent transaction so
+     *    winner determination is never misled by a stale snapshot.
+     * 3. Excludes disabled packs (`packEnabled == false`) from winning while still reporting
+     *    their decoded logical priority (`packPriority`).
+     * 4. Produces deterministic candidate ordering independent of SQLite row return order.
+     */
+    suspend fun getTopicVersionCandidates(
+        topicId: String
+    ): List<TopicVersionCandidateStatus> =
+        withContext(ioDispatcher) {
+            val cleanTopicId = topicId.trim()
+            if (cleanTopicId.isEmpty()) return@withContext emptyList()
+
+            initializationMutex.withLock {
+                val db = databaseRef.get() ?: return@withLock emptyList()
+                val dao = db.knowledgeDao()
+                db.withTransaction {
+                    var versions = dao.getAllTopicVersionsForTopicId(cleanTopicId)
+                    if (versions.isEmpty()) {
+                        val canonicalId = canonicalizeKnowledgeTopicId(cleanTopicId)
+                        if (canonicalId != null && canonicalId != cleanTopicId) {
+                            versions = dao.getAllTopicVersionsForTopicId(canonicalId)
+                        }
+                    }
+                    KnowledgePackReadModelMapper.buildTopicVersionCandidateStatuses(versions)
+                }
+            }
+        }
+
+    // =========================================================================
     // Lazy-Loaded Detailed Content & Follow-Up Branch Resolution (Task C & D)
     // =========================================================================
 
