@@ -11,6 +11,22 @@ import com.example.core.intelligence.knowledge.db.entity.KnowledgePackMetadataEn
 import com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicHeaderEntity
 import java.security.MessageDigest
 
+data class SeedTopicAspect(
+    val aspectId: String,
+    val priorityOrder: Int,
+    val anchorKeywords: List<String>,
+    val supportingKeywords: List<String> = emptyList(),
+    val arabicResponse: String,
+    val englishResponse: String
+)
+
+data class ResolvedTopicAspect(
+    val topicId: String,
+    val aspectId: String,
+    val responseText: String,
+    val score: Int
+)
+
 /**
  * Immutable catalog entry representing one of WEYKY's 11 built-in core topics.
  *
@@ -23,7 +39,8 @@ data class SeedTopicCatalogEntry(
     val keywords: List<String>,
     val arabicSummary: String,
     val englishSummary: String,
-    val suggestedFollowUps: List<ActionableOption>
+    val suggestedFollowUps: List<ActionableOption>,
+    val aspects: List<SeedTopicAspect> = emptyList()
 ) {
     /**
      * Converts this seed entry into the existing 5-field [LocalKnowledgeBase.KnowledgeTopic].
@@ -48,10 +65,10 @@ object SeedKnowledgeCatalog {
 
     const val CORE_SEED_PACK_ID: String = "core_seed_pack"
     const val CORE_SEED_SOURCE_TYPE: String = "SEED_BUILTIN"
-    const val CORE_SEED_PACK_VERSION: Int = 1
+    const val CORE_SEED_PACK_VERSION: Int = 2
     const val CORE_SEED_SCHEMA_VERSION: Int = 1
     const val CORE_SEED_PACK_PRIORITY: Int = 0
-    const val CORE_SEED_CONTENT_VERSION: Int = 1
+    const val CORE_SEED_CONTENT_VERSION: Int = 2
 
     /**
      * Exact stop-word set from [LocalKnowledgeBase] (`lines 170–175`).
@@ -209,20 +226,130 @@ object SeedKnowledgeCatalog {
                 ActionableOption("طقس منطقتي الآن", "ما حالة الطقس؟")
             )
         ),
-        // [7] Science: Speed of light, Solar System, Gravity
+        // [7] Science: Speed of light, Solar System, Gravity, Stars
         SeedTopicCatalogEntry(
             topicId = "physics_universe",
             topicOrderIndex = 7,
             keywords = listOf(
                 "سرعة الضوء", "ضوء الشمس", "السنة الضوئية", "المجموعة الشمسية", "النظام الشمسي",
                 "الجاذبية", "الفضاء", "الكواكب", "كواكب", "المجرة", "الكون",
-                "speed of light", "solar system", "gravity", "planets", "universe"
+                "speed of light", "solar system", "gravity", "planets", "universe",
+                "النجوم", "نجوم", "نجم", "طاقة النجوم", "الاندماج النووي",
+                "قوة الجاذبية", "دور الجاذبية", "جاذبية الشمس", "مدارات الكواكب",
+                "دور الجاذبية في النظام الشمسي", "stars", "nuclear fusion"
             ),
             arabicSummary = "حقائق علمية كونية:\n- سرعة الضوء في الفراغ تبلغ حوالي 300,000 كيلومتر في الثانية (299,792 كم/ث).\n- يستغرق ضوء الشمس حوالي 8 دقائق و20 ثانية للوصول إلى الأرض.\n- تتكون مجموعتنا الشمسية من 8 كواكب، أكبرها المشتري وأقربها للشمس عطارد.\n- الجاذبية هي القوة التي تحفظ الكواكب في مداراتها وتمنح الأجسام أوزانها.",
             englishSummary = "Fascinating cosmic facts:\n- The speed of light in a vacuum is approximately 300,000 km/s (299,792 km/s).\n- Sunlight takes about 8 minutes and 20 seconds to reach Earth.\n- Our solar system contains 8 recognized planets, Jupiter being the largest and Mercury closest to the Sun.\n- Gravity is the fundamental attraction keeping planets in orbit and holding our atmosphere.",
             suggestedFollowUps = listOf(
                 ActionableOption("احسب المسافة في دقيقة", "احسب 300000 * 60"),
                 ActionableOption("احكِ لي قصة قصيرة", "احك لي قصة قصيرة")
+            ),
+            aspects = listOf(
+                SeedTopicAspect(
+                    aspectId = "gravity_solar_system",
+                    priorityOrder = 1,
+                    anchorKeywords = listOf(
+                        "دور الجاذبية في النظام الشمسي", "دور الجاذبية في المجموعة الشمسية",
+                        "الجاذبية في النظام الشمسي", "الجاذبية في المجموعة الشمسية",
+                        "جاذبية الشمس", "مدارات الكواكب حول الشمس", "مدارات الكواكب",
+                        "كيف تحفظ الجاذبية الكواكب", "لماذا تدور الكواكب حول الشمس",
+                        "دور الجاذبية", "الجاذبية النظام الشمسي", "الجاذبية المجموعة الشمسية",
+                        "الجاذبية الكواكب", "gravity in the solar system",
+                        "role of gravity in the solar system", "sun gravity", "planetary orbits"
+                    ),
+                    supportingKeywords = listOf(
+                        "النظام الشمسي", "المجموعة الشمسية", "الكواكب", "كواكب",
+                        "مدارات", "مدار", "مداراتها", "الشمس", "الأقمار", "الاقمار",
+                        "الانفلات", "الكويكبات", "المذنبات",
+                        "solar system", "planets", "orbits", "sun", "moons"
+                    ),
+                    arabicResponse = "تؤدي الجاذبية الدور الأساسي في تماسك النظام الشمسي وتنظيم حركة جميع أجرامه السماوية:\n" +
+                        "1. جذب الشمس للكواكب وحفظ مداراتها: تمتلك الشمس نحو 99.8% من كتلة النظام الشمسي، ولذلك تولّد قوة جذب مركزية هائلة تُبقي الكواكب الثمانية في مدارات إهليلجية مستقرة حولها وتمنعها من الانفلات في الفضاء السحيق.\n" +
+                        "2. التوازن بين الجاذبية والسرعة المدارية: يستمر كل كوكب في الدوران حول الشمس بفضل التوازن الدقيق بين قوة جذب الشمس التي تشده نحو الداخل وسرعته المدارية (القصور الذاتي) التي تدفعه للتحرك على مساره.\n" +
+                        "3. تنظيم حركة الأقمار والكويكبات والمذنبات: تحكم الجاذبية المتبادلة دوران الأقمار حول كواكبها (مثل دوران القمر حول الأرض)، وتضبط مسارات الكواكب القزمة وحزام الكويكبات والمذنبات، كما تنشئ ظواهر المدّ والجزر والتأثيرات المدارية المتبادلة بين الأجرام السماوية.",
+                    englishResponse = "Gravity is the primary governing force that holds the Solar System together and orchestrates the motion of its celestial bodies:\n" +
+                        "1. The Sun's Gravitational Hold on Planetary Orbits: Holding about 99.8% of the Solar System's mass, the Sun exerts an immense inward gravitational pull that keeps all 8 planets in stable elliptical orbits and prevents them from drifting into deep space.\n" +
+                        "2. Balance of Gravity and Orbital Velocity: Stable planetary orbits arise from the precise balance between the Sun's inward gravitational attraction and each planet's forward orbital velocity.\n" +
+                        "3. Governing Moons, Asteroids, Comets, and Celestial Interactions: Mutual gravitational attraction keeps moons orbiting their host planets, shapes the trajectories of dwarf planets, asteroids, and comets, and drives tidal and orbital interactions across the Solar System."
+                ),
+                SeedTopicAspect(
+                    aspectId = "gravity",
+                    priorityOrder = 2,
+                    anchorKeywords = listOf(
+                        "الجاذبية", "جاذبية", "قوة الجاذبية",
+                        "كيف تعمل الجاذبية", "ما هي الجاذبية", "تجاذب الكتل",
+                        "gravity", "gravitational"
+                    ),
+                    supportingKeywords = listOf(
+                        "وزن", "الاوزان", "اوزانها", "الكتل", "الكتلة", "الارض", "الغلاف الجوي",
+                        "weight", "mass", "earth", "atmosphere"
+                    ),
+                    arabicResponse = "الجاذبية هي ظاهرة فيزيائية كونية تنشأ عنها قوة تجاذب طبيعية بين الكتل، حيث تنجذب الأجسام ذات الكتلة نحو بعضها البعض وتزداد قوتها بزيادة الكتلة وتقل بزيادة المسافة:\n" +
+                        "1. قرب سطح الأرض: تمنح الجاذبية الأجسام أوزانها وتشدّها نحو مركز الأرض، كما تحافظ على تماسك الغلاف الجوي المحيط بالكوكب.\n" +
+                        "2. في النظام الشمسي: تمارس الشمس قوة جاذبية هائلة تُبقي الكواكب والأقمار في مداراتها المنتظمة حولها وتمنعها من الانفلات في الفضاء.\n" +
+                        "3. شموليتها الكونية: الجاذبية ليست مقتصرة على الأرض، بل هي ظاهرة كونية شاملة تعمل في جميع أنحاء الكون، فتربط الأقمار بالكواكب، وتجمع النجوم داخل المجرات، وتقود تشكّل النجوم والكواكب.",
+                    englishResponse = "Gravity is a universal physical phenomenon of mutual attraction between masses, growing stronger with greater mass and weakening with distance:\n" +
+                        "1. Near Earth's Surface: Gravity gives objects their weight and holds Earth's atmosphere in place.\n" +
+                        "2. In the Solar System: The Sun's gravitational pull keeps the planets in stable orbits around it.\n" +
+                        "3. Universal Scope: Gravity is not limited to Earth—it acts across the entire cosmos, binding moons to planets, stars into galaxies, and shaping cosmic structures."
+                ),
+                SeedTopicAspect(
+                    aspectId = "stars",
+                    priorityOrder = 3,
+                    anchorKeywords = listOf(
+                        "النجوم", "نجوم", "نجم", "كيف تعمل النجوم",
+                        "كيف تنتج النجوم الطاقة", "طاقة النجوم", "الاندماج النووي",
+                        "stars", "how do stars work", "nuclear fusion"
+                    ),
+                    supportingKeywords = listOf(
+                        "الطاقة", "تنتج", "الضوء", "الحرارة", "البلازما",
+                        "الهيدروجين", "الهيليوم", "نواة", "energy", "plasma", "hydrogen", "helium"
+                    ),
+                    arabicResponse = "النجوم هي كرات غازية ضخمة ومتوهجة تتكون من البلازما شديدة الحرارة، وتعمل وتنتج طاقتها وفق الآلية الفيزيائية التالية:\n" +
+                        "1. الاندماج النووي في النواة: بفعل الكتلة الهائلة للنجم، يتولد في نواته (قلبه) ضغط وحرارة شديدان يطلقان تفاعلات الاندماج النووي.\n" +
+                        "2. اندماج الهيدروجين إلى هيليوم: في النجوم المشابهة للشمس، تندمج نوى ذرات الهيدروجين معاً لتكوين الهيليوم داخل نواة النجم.\n" +
+                        "3. انطلاق الطاقة كإشعاع وضوء وحرارة: يحرر هذا الاندماج النووي طاقة هائلة تنتقل إلى سطح النجم وتنطلق في الفضاء لتصل إلينا على شكل إشعاع وضوء وحرارة.\n" +
+                        "4. توازن الجاذبية والضغط الداخلي: يحافظ النجم على استقراره بفضل التوازن الدقيق بين قوة الجاذبية التي تضغط مادة النجم نحو الداخل، والضغط الحراري والإشعاعي الداخلي الناتج عن الاندماج النووي الذي يدفع نحو الخارج.",
+                    englishResponse = "Stars are massive, luminous spheres of hot plasma that generate energy primarily through core nuclear fusion:\n" +
+                        "1. Core Nuclear Fusion: Extreme temperature and pressure in the star's core drive nuclear fusion reactions.\n" +
+                        "2. Hydrogen into Helium: In Sun-like stars, hydrogen nuclei fuse together to form helium.\n" +
+                        "3. Radiation, Light, and Heat: Energy released by fusion travels to the surface and radiates into space, reaching us as light, heat, and electromagnetic radiation.\n" +
+                        "4. Gravitational Balance: A star remains stable because inward gravitational pull is balanced by the outward thermal and radiation pressure generated by fusion."
+                ),
+                SeedTopicAspect(
+                    aspectId = "speed_of_light",
+                    priorityOrder = 4,
+                    anchorKeywords = listOf(
+                        "سرعة الضوء", "ضوء الشمس", "السنة الضوئية",
+                        "speed of light", "light year", "sunlight"
+                    ),
+                    supportingKeywords = listOf(
+                        "الضوء", "الفراغ", "الفضاء", "ثانية", "دقائق", "كيلومتر", "light", "vacuum"
+                    ),
+                    arabicResponse = "سرعة الضوء في الفراغ تبلغ حوالي 300,000 كيلومتر في الثانية (وتحديداً 299,792 كم/ث)، وهي الحد الأقصى للسرعة الكونية:\n" +
+                        "- وصول ضوء الشمس: يبعد كوكب الأرض عن الشمس نحو 149.6 مليون كم، لذلك يستغرق ضوء الشمس حوالي 8 دقائق و20 ثانية للوصول إلى الأرض.\n" +
+                        "- السنة الضوئية: هي المسافة التي يقطعها الضوء خلال سنة كاملة وتساوي نحو 9.46 تريليون كيلومتر.",
+                    englishResponse = "The speed of light in a vacuum is approximately 300,000 km/s (299,792 km/s):\n" +
+                        "- Sunlight takes about 8 minutes and 20 seconds to travel the 149.6 million km from the Sun to Earth.\n" +
+                        "- A light-year is the distance light travels in one year, roughly 9.46 trillion kilometers."
+                ),
+                SeedTopicAspect(
+                    aspectId = "solar_system",
+                    priorityOrder = 5,
+                    anchorKeywords = listOf(
+                        "المجموعة الشمسية", "النظام الشمسي", "كواكب المجموعة الشمسية",
+                        "عدد الكواكب", "solar system"
+                    ),
+                    supportingKeywords = listOf(
+                        "الكواكب", "كواكب", "عطارد", "المشتري", "زحل", "المريخ", "الزهرة", "planets"
+                    ),
+                    arabicResponse = "تتكون مجموعتنا الشمسية (النظام الشمسي) من نجم مركزي هو الشمس و8 كواكب تدور حولها في مدارات منتظمة:\n" +
+                        "- الكواكب الثمانية: أقربها للشمس عطارد، يليه الزهرة، الأرض، المريخ، ثم الكواكب العملاقة: المشتري (وهو أكبر كواكب المجموعة الشمسية)، زحل، أورانوس، ونبتون.\n" +
+                        "- تحفظ جاذبية الشمس الكواكب في مداراتها، ويستغرق ضوء الشمس حوالي 8 دقائق و20 ثانية للوصول إلى الأرض بسرعة 300,000 كم/ث.",
+                    englishResponse = "Our Solar System consists of the Sun and 8 recognized planets orbiting it:\n" +
+                        "- The 8 planets ordered from the Sun outward are Mercury (closest), Venus, Earth, Mars, Jupiter (the largest), Saturn, Uranus, and Neptune.\n" +
+                        "- The Sun's gravity keeps the planets in orbit, while sunlight travels at 300,000 km/s to reach Earth in 8 minutes and 20 seconds."
+                )
             )
         ),
         // [8] Short Inspirational Story / Wisdom
@@ -257,13 +384,127 @@ object SeedKnowledgeCatalog {
                 "الحفاظ على البطارية", "عمر البطارية", "توفير البطارية", "نصائح للبطارية",
                 "حماية البطارية", "صحة البطارية", "اطالة عمر البطارية",
                 "battery health", "battery tips", "save battery", "battery lifespan", "battery care",
-                "شحن الهاتف", "بطارية الهاتف"
+                "شحن الهاتف", "بطارية الهاتف",
+                "تنفد البطارية", "نفاد البطارية", "استنزاف البطارية", "استهلاك البطارية",
+                "لماذا تنفد البطارية", "لماذا تنفد البطارية بسرعة", "تفرغ البطارية", "تفرغ البطارية بسرعة",
+                "تنفذ البطارية", "نفاذ البطارية", "لماذا تنفذ البطارية", "لماذا تنفذ البطارية بسرعة",
+                "اسباب نفاد البطارية", "اسباب استهلاك البطارية", "سبب استهلاك البطارية", "اسباب استهلاك الطاقة",
+                "تخلص البطارية", "تهبط البطارية", "تنفد بطاريتي", "تنفذ بطاريتي",
+                "يضر البطارية", "الشحن الليلي", "الشحن طوال الليل",
+                "استهلاك الطاقة", "تقليل استهلاك الطاقة", "توفير الطاقة",
+                "battery drain", "why does battery drain", "draining fast", "overnight charging", "power saving"
             ),
             arabicSummary = "للحفاظ على صحة بطارية هاتفك لأطول فترة:\n1. حاول إبقاء نسبة الشحن بين 20% و80% وتجنب التفريغ الكامل المتكرر.\n2. تجنب تعريض الهاتف للحرارة العالية أثناء الشحن.\n3. خفّض سطوع الشاشة واستخدم الوضع الداكن (Dark Mode).\n4. أغلق البلوتوث والموقع عند عدم الحاجة إليهما.",
             englishSummary = "To maximize your phone's battery lifespan:\n1. Keep charge levels between 20% and 80%, avoiding complete depletion.\n2. Avoid exposing your device to high heat or direct sunlight while charging.\n3. Lower screen brightness and use Dark Mode.\n4. Disable Bluetooth and GPS when not in active use.",
             suggestedFollowUps = listOf(
                 ActionableOption("كم نسبة بطاريتي الآن؟", "كم نسبة البطارية؟"),
                 ActionableOption("هل البطارية ستكفي؟", "هل البطارية ستكفي؟")
+            ),
+            aspects = listOf(
+                SeedTopicAspect(
+                    aspectId = "battery_drain",
+                    priorityOrder = 1,
+                    anchorKeywords = listOf(
+                        "تنفد البطارية", "نفاد البطارية", "استنزاف البطارية",
+                        "لماذا تنفد البطارية", "لماذا تنفد البطارية بسرعة",
+                        "تنفذ البطارية", "نفاذ البطارية", "لماذا تنفذ البطارية", "لماذا تنفذ البطارية بسرعة",
+                        "اسباب استهلاك البطارية", "سبب استهلاك البطارية",
+                        "اسباب استهلاك الطاقة", "اسباب نفاد البطارية", "اسباب نفاذ البطارية", "استهلاك البطارية",
+                        "تفرغ البطارية", "تفرغ البطارية بسرعة", "تخلص البطارية", "تهبط البطارية",
+                        "تنفد بطاريتي", "تنفذ بطاريتي",
+                        "battery drain", "why does battery drain", "draining fast"
+                    ),
+                    supportingKeywords = listOf(
+                        "تنفد", "نفاد", "تنفذ", "نفاذ", "استنزاف", "بسرعة", "اسباب", "لماذا", "تفرغ", "تخلص", "تهبط"
+                    ),
+                    arabicResponse = "ينقسم نفاد البطارية بسرعة إلى قسمين رئيسيين: أسباب الاستهلاك العالي اللحظي، وتراجع السعة الكيميائية للبطارية مع الزمن:\n" +
+                        "أولاً — أسباب الاستهلاك العالي للطاقة:\n" +
+                        "1. الشاشة: رفع سطوع الشاشة إلى مستويات عالية وتشغيل معدل التحديث المرتفع (90Hz/120Hz) باستمرار.\n" +
+                        "2. التطبيقات في الخلفية: عمل تطبيقات تستهلك المعالج والمزامنة والإشعارات في الخلفية دون توقف.\n" +
+                        "3. ضعف إشارة الشبكة: عند ضعف التغطية والبحث المستمر عن الاتصال، يرفع الهاتف قدرة الهوائي مما يستنزف البطارية بسرعة.\n" +
+                        "4. خدمات الموقع والاتصالات اللاسلكية: تشغيل GPS والملاحة والبلوتوث ونقطة الاتصال (Hotspot) بصورة متواصلة.\n" +
+                        "5. الحرارة المرتفعة: ارتفاع حرارة الجهاز أو المحيط يزيد الفقد الحراري ويرفع سرعة تفريغ الشحن.\n" +
+                        "ثانياً — تراجع السعة الكيميائية مع الزمن:\n" +
+                        "مع تزايد دورات الشحن وتقادم البطارية كيميائياً، تنخفض السعة الفعلية القابلة للتخزين مقارنة بالبطارية الجديدة، فتفرغ البطارية أسرع حتى مع نفس نمط الاستخدام المعتاد.",
+                    englishResponse = "Rapid battery drain stems from two distinct categories—high active power consumption versus chemical capacity aging over time:\n" +
+                        "1. High Power Consumption Causes:\n" +
+                        "- High screen brightness and continuous high refresh rate.\n" +
+                        "- Background apps actively using CPU and network sync.\n" +
+                        "- Weak network signal forcing constant searching for cellular connection.\n" +
+                        "- Continuous GPS location services and wireless connections.\n" +
+                        "- High device or ambient temperature.\n" +
+                        "2. Chemical Capacity Degradation Over Time:\n" +
+                        "- As lithium-ion batteries age across charge cycles, their maximum chemical capacity decreases, causing the phone to run out faster even under normal usage."
+                ),
+                SeedTopicAspect(
+                    aspectId = "overnight_charging",
+                    priorityOrder = 2,
+                    anchorKeywords = listOf(
+                        "الشحن طوال الليل", "الشحن الليلي", "طوال الليل", "اثناء النوم",
+                        "يضر البطارية", "تضر البطارية", "اضرار الشحن",
+                        "ترك الهاتف في الشاحن", "overnight charging", "charge overnight"
+                    ),
+                    supportingKeywords = listOf(
+                        "الليل", "النوم", "يضر", "ضرر", "الشحن", "100%", "حرارة"
+                    ),
+                    arabicResponse = "الشحن طوال الليل لا يُتلف البطارية بشكل فوري في الهواتف الحديثة، لكن تأثيره التراكمي يرتبط بالحرارة وطريقة إدارة الشحن:\n" +
+                        "1. إيقاف الشحن عند الامتلاء: الهواتف الذكية الحديثة مزودة بمنظومة إدارة طاقة توقف الشحن الفعلي تلقائياً أو تديره عند الوصول إلى 100% لمنع الشحن الزائد.\n" +
+                        "2. تأثير البقاء طويلاً عند شحن مرتفع مع الحرارة: بقاء البطارية لساعات طويلة عند مستوى شحن مرتفع (100%) وخاصة مع ارتفاع الحرارة قد يسرّع الشيخوخة الكيميائية للخلايا تدريجياً على المدى الطويل.\n" +
+                        "3. ميزة الشحن المحسّن (Optimized Charging): يُنصح بتفعيل الشحن المحسّن أو التكيّفي عند دعمه في هاتفك، حيث يوقف الشحن مؤقتاً قرب 80% أثناء الليل ويكمله قبيل موعد استيقاظك.\n" +
+                        "4. تجنب الحرارة أثناء الشحن: ضع الهاتف على سطح جيد التهوية وتجنب تغطيته بالوسادة أو الأغطية السميكة أثناء الشحن؛ علماً أن قاعدة 20%–80% هي عادة مساعدة اختيارية لتقليل الإجهاد الكيميائي وليست شرطاً إلزامياً لكل مستخدم.",
+                    englishResponse = "Overnight charging does not cause immediate damage on modern smartphones, though long-term wear depends on heat and charge management:\n" +
+                        "1. Automatic Cutoff at Full Charge: Modern phones manage and stop active charging once reaching 100%.\n" +
+                        "2. Heat & Prolonged High Charge: Staying at high charge levels for long periods—especially combined with heat—can accelerate chemical aging over time.\n" +
+                        "3. Optimized / Adaptive Charging: Enable Optimized Charging when supported so the device pauses near 80% overnight and completes charging shortly before you wake up.\n" +
+                        "4. Avoid High Heat While Charging: Keep the phone ventilated while charging; the 20%–80% practice is a helpful optional guideline rather than a mandatory requirement."
+                ),
+                SeedTopicAspect(
+                    aspectId = "energy_saving",
+                    priorityOrder = 3,
+                    anchorKeywords = listOf(
+                        "اقلل استهلاك الطاقة", "تقليل استهلاك الطاقة", "اقلل استهلاك البطارية",
+                        "تقليل استهلاك البطارية", "استهلاك الطاقة", "توفير الطاقة",
+                        "توفير البطارية", "كيف اوفر الطاقة", "كيف اوفر البطارية",
+                        "save power", "save energy", "power saving", "save battery"
+                    ),
+                    supportingKeywords = listOf(
+                        "اقلل", "تقليل", "توفير", "اوفر", "الطاقة", "سطوع", "الوضع الداكن"
+                    ),
+                    arabicResponse = "لتقليل استهلاك الطاقة وتوفير شحن البطارية خلال الاستخدام اليومي، اتبع الخطوات العملية التالية:\n" +
+                        "1. تفعيل وضع توفير الطاقة (Battery Saver): شغّله عند الحاجة لتقليل استهلاك المعالج والنشاط الخلفي تلقائياً.\n" +
+                        "2. خفض سطوع الشاشة وتقليل معدل التحديث: قلّل السطوع أو فعّل السطوع التكيّفي، واخفض معدل التحديث (Refresh Rate) إلى المستوى القياسي (60Hz) إذا كان هاتفك يدعم ذلك.\n" +
+                        "3. مراجعة التطبيقات الأعلى استهلاكاً وتقييد نشاط الخلفية: افحص قائمة استهلاك البطارية في الإعدادات وقيّد نشاط الخلفية غير الضروري للتطبيقات المستنزفة.\n" +
+                        "4. إدارة GPS والبلوتوث والاتصالات اللاسلكية: أوقف الموقع (GPS) والبلوتوث ونقطة الاتصال اللاسلكية عند عدم استخدامها فعلياً.\n" +
+                        "5. استخدام الوضع الداكن (Dark Mode): يوفّر الوضع الداكن قدراً ملموساً من الطاقة في شاشات OLED وAMOLED لأن البكسلات الداكنة تستهلك طاقة أقل أو تنطفئ، مع الانتباه إلى أن الفائدة الفعلية تعتمد على نوع الشاشة وتكون محدودة في شاشات LCD.",
+                    englishResponse = "To reduce power consumption and extend battery runtime:\n" +
+                        "1. Enable Battery Saver when needed.\n" +
+                        "2. Lower screen brightness and reduce screen refresh rate if supported.\n" +
+                        "3. Review top battery-consuming apps in settings and restrict unnecessary background activity.\n" +
+                        "4. Manage GPS, Bluetooth, and wireless connections according to actual usage.\n" +
+                        "5. Use Dark Mode on OLED/AMOLED screens, noting that the actual power savings depend on the display panel technology."
+                ),
+                SeedTopicAspect(
+                    aspectId = "battery_lifespan",
+                    priorityOrder = 4,
+                    anchorKeywords = listOf(
+                        "عمر البطارية", "الحفاظ على البطارية", "احافظ على عمر البطارية",
+                        "اطالة عمر البطارية", "صحة البطارية", "حماية البطارية",
+                        "battery lifespan", "battery health", "battery care"
+                    ),
+                    supportingKeywords = listOf(
+                        "عمر", "الحفاظ", "احافظ", "اطالة", "صحة", "حماية", "دورات الشحن"
+                    ),
+                    arabicResponse = "للحفاظ على عمر البطارية وإبطاء تآكلها الكيميائي على المدى الطويل، يُنصح باتباع هذه الإرشادات العملية المتوازنة:\n" +
+                        "1. تجنب الحرارة المرتفعة: تُعد الحرارة العالية أثناء الشحن أو الاستخدام تحت الشمس العامل الأخطر على صحة خلايا البطارية.\n" +
+                        "2. عادات شحن متوازنة وتجنب التفريغ العميق: تجنب ترك البطارية تهبط إلى 0% بشكل متكرر، ويفضّل كعادة عملية مفيدة (وغير إلزامية) إبقاء الشحن غالباً بين 20% و80% عند الإمكان.\n" +
+                        "3. تفعيل ميزات الشحن المحسّن: فعّل الشحن المحسّن أو التكيّفي في إعدادات الهاتف لتقليل فترات بقاء البطارية عند أقصى جهد (100%).\n" +
+                        "4. استخدام شواحن معتمدة وتخفيف الحمل أثناء الشحن: اعتمد على شواحن موثوقة وتجنب تشغيل الألعاب أو المهام الثقيلة أثناء الشحن السريع لمنع تراكم الحرارة.",
+                    englishResponse = "To preserve long-term battery health and lifespan, follow these balanced guidelines:\n" +
+                        "1. Avoid High Heat: Protect the phone from overheating during charging or direct sunlight exposure.\n" +
+                        "2. Balanced Charging Habits & Avoiding Deep Discharge: Avoid frequent 0% deep discharges; keeping charge mostly between 20% and 80% when convenient is a helpful practice.\n" +
+                        "3. Enable Optimized Charging: Use smart or adaptive charging features to reduce time spent at 100% voltage.\n" +
+                        "4. Use Certified Chargers: Charge with reliable adapters and avoid heavy gaming while fast charging."
+                )
             )
         )
     )
@@ -292,6 +533,185 @@ object SeedKnowledgeCatalog {
         LocalKnowledgeBase.resolveSpecificCapitalAnswer(query, isArabic)
 
     /**
+     * Unified aspect/sub-concept resolver for retrieved topics.
+     *
+     * Given a retrieved [topicId] and [query], determines whether the user is asking about a
+     * specific sub-concept (`aspectId`) inside that topic rather than the general topic summary.
+     * Requires at least one distinctive anchor phrase/token match so a single generic word never
+     * triggers an unintended sub-answer.
+     */
+    fun resolveTopicAspect(
+        topicId: String,
+        query: String,
+        isArabic: Boolean
+    ): ResolvedTopicAspect? {
+        if (query.isBlank()) return null
+
+        if (topicId == "capitals_arab") {
+            val specificCapital = resolveSpecificCapitalAnswer(query, isArabic)
+            if (!specificCapital.isNullOrBlank()) {
+                return ResolvedTopicAspect(
+                    topicId = topicId,
+                    aspectId = "specific_capital",
+                    responseText = specificCapital,
+                    score = 200
+                )
+            }
+            return null
+        }
+
+        val entry = coreTopicsById[topicId] ?: return null
+        if (entry.aspects.isEmpty()) return null
+
+        val strictQuery = LocalKnowledgeBase.normalizeArabicStrict(query)
+        val relaxedQuery = LocalKnowledgeBase.normalizeArabic(query)
+        if (relaxedQuery.isBlank()) return null
+
+        val strictQueryTokens = strictQuery.split(" ").filter { it.isNotBlank() }
+        val relaxedQueryTokens = relaxedQuery.split(" ").filter { it.isNotBlank() }
+        if (relaxedQueryTokens.isEmpty()) return null
+
+        var bestAspect: SeedTopicAspect? = null
+        var bestScore = 0
+
+        for (aspect in entry.aspects) {
+            var maxAnchorScore = 0
+            var matchedAnchorsCount = 0
+
+            for (rawAnchor in aspect.anchorKeywords) {
+                val anchorScore = scoreAspectKeywordMatch(
+                    rawKeyword = rawAnchor,
+                    strictQuery = strictQuery,
+                    relaxedQuery = relaxedQuery,
+                    strictQueryTokens = strictQueryTokens,
+                    relaxedQueryTokens = relaxedQueryTokens,
+                    isAnchor = true
+                )
+                if (anchorScore > 0) {
+                    matchedAnchorsCount++
+                    if (anchorScore > maxAnchorScore) {
+                        maxAnchorScore = anchorScore
+                    }
+                }
+            }
+
+            if (maxAnchorScore == 0) continue
+
+            var supportingBonus = 0
+            for (rawSupport in aspect.supportingKeywords) {
+                val supScore = scoreAspectKeywordMatch(
+                    rawKeyword = rawSupport,
+                    strictQuery = strictQuery,
+                    relaxedQuery = relaxedQuery,
+                    strictQueryTokens = strictQueryTokens,
+                    relaxedQueryTokens = relaxedQueryTokens,
+                    isAnchor = false
+                )
+                if (supScore > 0) {
+                    supportingBonus += 20
+                }
+            }
+
+            val multiAnchorBonus = if (matchedAnchorsCount > 1) {
+                minOf((matchedAnchorsCount - 1) * 15, 30)
+            } else {
+                0
+            }
+
+            val totalAspectScore = maxAnchorScore + minOf(supportingBonus, 60) + multiAnchorBonus
+            val isBetter = totalAspectScore > bestScore ||
+                (totalAspectScore == bestScore && bestAspect != null && aspect.priorityOrder < bestAspect.priorityOrder)
+            if (isBetter) {
+                bestScore = totalAspectScore
+                bestAspect = aspect
+            }
+        }
+
+        val winningAspect = bestAspect ?: return null
+        val text = if (isArabic) winningAspect.arabicResponse else winningAspect.englishResponse
+        if (text.isBlank()) return null
+
+        return ResolvedTopicAspect(
+            topicId = topicId,
+            aspectId = winningAspect.aspectId,
+            responseText = text,
+            score = bestScore
+        )
+    }
+
+    private fun scoreAspectKeywordMatch(
+        rawKeyword: String,
+        strictQuery: String,
+        relaxedQuery: String,
+        strictQueryTokens: List<String>,
+        relaxedQueryTokens: List<String>,
+        isAnchor: Boolean
+    ): Int {
+        val relaxedKw = LocalKnowledgeBase.normalizeArabic(rawKeyword)
+        if (relaxedKw.isBlank()) return 0
+        val strictKw = LocalKnowledgeBase.normalizeArabicStrict(rawKeyword)
+        val strictKwTokens = strictKw.split(" ").filter { it.isNotBlank() }
+        val relaxedKwTokens = relaxedKw.split(" ").filter { it.isNotBlank() }
+        if (relaxedKwTokens.isEmpty()) return 0
+
+        if (strictQuery == strictKw || relaxedQuery == relaxedKw) {
+            return if (isAnchor) 180 + relaxedKwTokens.size * 25 else 25
+        }
+
+        // Contiguous word-boundary match
+        if (containsTokensOnWordBoundary(strictQueryTokens, relaxedQueryTokens, strictKwTokens, relaxedKwTokens)) {
+            return if (isAnchor) {
+                if (relaxedKwTokens.size >= 2) {
+                    120 + relaxedKwTokens.size * 25 + relaxedKw.length
+                } else {
+                    85 + relaxedKw.length
+                }
+            } else {
+                20
+            }
+        }
+
+        // Order-independent multi-token match for multi-word anchor phrases
+        val contentKwIndices = relaxedKwTokens.indices
+            .filter { relaxedKwTokens[it] !in STOP_WORDS }
+            .ifEmpty { relaxedKwTokens.indices.toList() }
+
+        if (isAnchor && contentKwIndices.size >= 2) {
+            val allContentMatched = contentKwIndices.all { kIdx ->
+                val kwTok = relaxedKwTokens[kIdx]
+                relaxedQueryTokens.any { qTok -> LocalKnowledgeBase.tokensMatch(qTok, kwTok) }
+            }
+            if (allContentMatched) {
+                return 105 + contentKwIndices.size * 20
+            }
+        }
+
+        return 0
+    }
+
+    private fun containsTokensOnWordBoundary(
+        strictQueryTokens: List<String>,
+        relaxedQueryTokens: List<String>,
+        strictKwTokens: List<String>,
+        relaxedKwTokens: List<String>
+    ): Boolean {
+        if (relaxedKwTokens.isEmpty() || relaxedQueryTokens.size < relaxedKwTokens.size) return false
+        for (i in 0..(relaxedQueryTokens.size - relaxedKwTokens.size)) {
+            var allMatched = true
+            for (j in relaxedKwTokens.indices) {
+                val qTok = strictQueryTokens.getOrElse(i + j) { relaxedQueryTokens[i + j] }
+                val kTok = strictKwTokens.getOrElse(j) { relaxedKwTokens[j] }
+                if (!LocalKnowledgeBase.tokensMatch(qTok, kTok)) {
+                    allMatched = false
+                    break
+                }
+            }
+            if (allMatched) return true
+        }
+        return false
+    }
+
+    /**
      * Computes a deterministic SHA-256 checksum over the 11 core topics so idempotent Room seed
      * initialization can verify whether `core_seed_pack` is already up to date.
      */
@@ -308,6 +728,18 @@ object SeedKnowledgeCatalog {
             for (opt in entry.suggestedFollowUps) {
                 digest.update(opt.title.toByteArray(Charsets.UTF_8))
                 digest.update(opt.queryToExecute.toByteArray(Charsets.UTF_8))
+            }
+            for (aspect in entry.aspects) {
+                digest.update(aspect.aspectId.toByteArray(Charsets.UTF_8))
+                digest.update(aspect.priorityOrder.toString().toByteArray(Charsets.UTF_8))
+                for (anchor in aspect.anchorKeywords) {
+                    digest.update(anchor.toByteArray(Charsets.UTF_8))
+                }
+                for (support in aspect.supportingKeywords) {
+                    digest.update(support.toByteArray(Charsets.UTF_8))
+                }
+                digest.update(aspect.arabicResponse.toByteArray(Charsets.UTF_8))
+                digest.update(aspect.englishResponse.toByteArray(Charsets.UTF_8))
             }
         }
         digest.digest().joinToString("") { "%02x".format(it) }

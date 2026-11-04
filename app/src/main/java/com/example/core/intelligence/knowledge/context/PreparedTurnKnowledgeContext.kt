@@ -65,7 +65,9 @@ data class PreparedTurnKnowledgeContext(
     val knowledgeGeneration: Long,
     val hasValidKnowledgeMatch: Boolean,
     val availabilityStatus: KnowledgeAvailabilityStatus,
-    val snapshotUsed: InMemorySearchSnapshot? = null
+    val snapshotUsed: InMemorySearchSnapshot? = null,
+    val matchedAspectId: String? = null,
+    val matchedAspectAnswer: String? = null
 ) {
     /**
      * The pinned [ActiveTopicIdentity] (`topicId + packId + contentVersion`) of [retrievedTopicId]
@@ -93,10 +95,14 @@ data class PreparedTurnKnowledgeContext(
 
     /**
      * Resolves the localized response text for [retrievedTopic] when [hasValidKnowledgeMatch] is true,
-     * prioritizing [specificCapitalAnswer] for `capitals_arab` inquiries.
+     * prioritizing [matchedAspectAnswer] for sub-concept/aspect inquiries and [specificCapitalAnswer]
+     * for `capitals_arab` inquiries, falling back to the general topic summary when the query is broad.
      */
     fun resolveMatchedResponseText(): String? {
         if (!hasValidKnowledgeMatch || retrievedTopic == null) return null
+        if (!matchedAspectAnswer.isNullOrBlank()) {
+            return matchedAspectAnswer
+        }
         if (retrievedTopic.id == "capitals_arab" && !specificCapitalAnswer.isNullOrBlank()) {
             return specificCapitalAnswer
         }

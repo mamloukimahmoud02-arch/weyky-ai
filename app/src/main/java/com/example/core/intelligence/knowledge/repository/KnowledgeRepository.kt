@@ -398,6 +398,16 @@ class KnowledgeRepository(
                 null
             }
 
+            val resolvedAspect = if (winningTopicId != null) {
+                SeedKnowledgeCatalog.resolveTopicAspect(
+                    topicId = winningTopicId,
+                    query = cleanQuery,
+                    isArabic = isArabic
+                )
+            } else {
+                null
+            }
+
             val rankedCandidates = if (supplementalCandidate != null &&
                 searchResult.orderedCandidates.none { it.topicId == supplementalCandidate.topicId }
             ) {
@@ -410,7 +420,10 @@ class KnowledgeRepository(
                 winningTopic == null -> KnowledgeAvailabilityStatus.NO_MATCHING_TOPIC
                 else -> {
                     val localizedSummary = if (isArabic) winningTopic.arabicSummary else winningTopic.englishSummary
-                    if (localizedSummary.isNotBlank() || !specificCapitalAnswer.isNullOrBlank()) {
+                    if (localizedSummary.isNotBlank() ||
+                        !specificCapitalAnswer.isNullOrBlank() ||
+                        !resolvedAspect?.responseText.isNullOrBlank()
+                    ) {
                         KnowledgeAvailabilityStatus.MATCHED_USABLE_KNOWLEDGE
                     } else {
                         KnowledgeAvailabilityStatus.MATCHED_INSUFFICIENT_INFO
@@ -441,7 +454,9 @@ class KnowledgeRepository(
                 knowledgeGeneration = snapshot.knowledgeGeneration,
                 hasValidKnowledgeMatch = hasValidMatch,
                 availabilityStatus = availabilityStatus,
-                snapshotUsed = snapshot
+                snapshotUsed = snapshot,
+                matchedAspectId = if (hasValidMatch) resolvedAspect?.aspectId else null,
+                matchedAspectAnswer = if (hasValidMatch) resolvedAspect?.responseText else null
             )
             lastTurnSearchInvocations = searchInvocationCounter.get() - startInvocations
             lastPreparedContext = prepared
@@ -618,16 +633,33 @@ class KnowledgeRepository(
             }
         }
 
-        // 3. Battery care concept formulations ("Explain battery care.", "Tell me about battery care")
+        // 3. Battery care concept formulations ("Explain battery care.", "لماذا تنفد البطارية بسرعة؟", etc.)
         if (snapshot.topicsById.containsKey("battery_care") && relaxedTokens.size >= 2) {
             val asksBatteryCare = relaxedNormalizedQuery.contains("battery care") ||
                 relaxedNormalizedQuery.contains("care for battery") ||
                 relaxedNormalizedQuery.contains("caring for battery") ||
                 relaxedNormalizedQuery.contains("protect battery") ||
                 relaxedNormalizedQuery.contains("preserve battery") ||
+                relaxedNormalizedQuery.contains("battery drain") ||
+                relaxedNormalizedQuery.contains("draining fast") ||
+                relaxedNormalizedQuery.contains("overnight charging") ||
+                relaxedNormalizedQuery.contains("power saving") ||
                 relaxedNormalizedQuery.contains("العنايه بالبطاريه") ||
                 relaxedNormalizedQuery.contains("عنايه البطاريه") ||
-                relaxedNormalizedQuery.contains("حمايه البطاريه")
+                relaxedNormalizedQuery.contains("حمايه البطاريه") ||
+                relaxedNormalizedQuery.contains("تنفد البطاريه") ||
+                relaxedNormalizedQuery.contains("نفاد البطاريه") ||
+                relaxedNormalizedQuery.contains("تنفذ البطاريه") ||
+                relaxedNormalizedQuery.contains("نفاذ البطاريه") ||
+                relaxedNormalizedQuery.contains("تفرغ البطاريه") ||
+                relaxedNormalizedQuery.contains("استنزاف البطاريه") ||
+                relaxedNormalizedQuery.contains("استهلاك البطاريه") ||
+                relaxedNormalizedQuery.contains("الشحن طوال الليل") ||
+                relaxedNormalizedQuery.contains("الشحن الليلي") ||
+                relaxedNormalizedQuery.contains("يضر البطاريه") ||
+                relaxedNormalizedQuery.contains("استهلاك الطاقه") ||
+                relaxedNormalizedQuery.contains("توفير الطاقه") ||
+                relaxedNormalizedQuery.contains("عمر البطاريه")
             if (asksBatteryCare) {
                 val tIdx = snapshot.topicOrderIndex["battery_care"] ?: 0
                 return ScoredTopicCandidate(
@@ -697,6 +729,30 @@ class KnowledgeRepository(
                     finalScore = 148 + bonus,
                     matchedKeywordsCount = 1
                 )
+            }
+        }
+
+        // 6. Core topic aspect anchor match fallback (ensures any multi-token aspect anchor in SeedKnowledgeCatalog
+        // resolves to its owning topic even if the snapshot's primary keyword index had not yet matched)
+        if (relaxedTokens.size >= 2) {
+            for (coreEntry in SeedKnowledgeCatalog.coreTopics) {
+                if (coreEntry.aspects.isEmpty()) continue
+                if (!snapshot.topicsById.containsKey(coreEntry.topicId)) continue
+                val resolvedAspect = SeedKnowledgeCatalog.resolveTopicAspect(
+                    topicId = coreEntry.topicId,
+                    query = strictNormalizedQuery,
+                    isArabic = true
+                )
+                if (resolvedAspect != null && resolvedAspect.score >= 120) {
+                    val tIdx = snapshot.topicOrderIndex[coreEntry.topicId] ?: coreEntry.topicOrderIndex
+                    return ScoredTopicCandidate(
+                        topicId = coreEntry.topicId,
+                        topicOrderIndex = tIdx,
+                        rawScore = resolvedAspect.score,
+                        finalScore = resolvedAspect.score,
+                        matchedKeywordsCount = 1
+                    )
+                }
             }
         }
 
@@ -1516,7 +1572,7 @@ class KnowledgeRepository(
             existingPack.sha256Checksum == expectedPack.sha256Checksum &&
             existingPack.topicCount == SeedKnowledgeCatalog.coreTopics.size &&
             existingHeaders.size == SeedKnowledgeCatalog.coreTopics.size &&
-            verifyCoreTopicsMatchSeed(existingHeaders)
+            verifyCoreTopicsMatchSeed(dao, existingHeaders)
 
         if (isAlreadyUpToDate) {
             return
@@ -1620,7 +1676,8 @@ class KnowledgeRepository(
         )
     }
 
-    private fun verifyCoreTopicsMatchSeed(
+    private suspend fun verifyCoreTopicsMatchSeed(
+        dao: KnowledgeDao,
         existingHeaders: List<com.example.core.intelligence.knowledge.db.entity.KnowledgeTopicHeaderEntity>
     ): Boolean {
         val byId = existingHeaders.associateBy { it.topicId }
@@ -1630,7 +1687,17 @@ class KnowledgeRepository(
                 stored.arabicSummary != seedEntry.arabicSummary ||
                 stored.englishSummary != seedEntry.englishSummary ||
                 stored.sourceType != SeedKnowledgeCatalog.CORE_SEED_SOURCE_TYPE ||
+                stored.contentVersion != SeedKnowledgeCatalog.CORE_SEED_CONTENT_VERSION ||
                 !stored.isCoreTopic
+            ) {
+                return false
+            }
+            val storedKeywords = dao.getKeywordsByTopicAndPackOrdered(
+                seedEntry.topicId,
+                SeedKnowledgeCatalog.CORE_SEED_PACK_ID
+            )
+            if (storedKeywords.size != seedEntry.keywords.size ||
+                storedKeywords.map { it.originalKeyword } != seedEntry.keywords
             ) {
                 return false
             }

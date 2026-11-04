@@ -111,13 +111,16 @@ object LocalKnowledgeBase {
         ActionableOption("طقس منطقتي الآن", "ما حالة الطقس؟")
       )
     ),
-    // 8. Science: Speed of light, Solar System, Gravity
+    // 8. Science: Speed of light, Solar System, Gravity, Stars
     KnowledgeTopic(
       id = "physics_universe",
       keywords = listOf(
         "سرعة الضوء", "ضوء الشمس", "السنة الضوئية", "المجموعة الشمسية", "النظام الشمسي",
         "الجاذبية", "الفضاء", "الكواكب", "كواكب", "المجرة", "الكون",
-        "speed of light", "solar system", "gravity", "planets", "universe"
+        "speed of light", "solar system", "gravity", "planets", "universe",
+        "النجوم", "نجوم", "نجم", "طاقة النجوم", "الاندماج النووي",
+        "قوة الجاذبية", "دور الجاذبية", "جاذبية الشمس", "مدارات الكواكب",
+        "دور الجاذبية في النظام الشمسي", "stars", "nuclear fusion"
       ),
       arabicSummary = "حقائق علمية كونية:\n- سرعة الضوء في الفراغ تبلغ حوالي 300,000 كيلومتر في الثانية (299,792 كم/ث).\n- يستغرق ضوء الشمس حوالي 8 دقائق و20 ثانية للوصول إلى الأرض.\n- تتكون مجموعتنا الشمسية من 8 كواكب، أكبرها المشتري وأقربها للشمس عطارد.\n- الجاذبية هي القوة التي تحفظ الكواكب في مداراتها وتمنح الأجسام أوزانها.",
       englishSummary = "Fascinating cosmic facts:\n- The speed of light in a vacuum is approximately 300,000 km/s (299,792 km/s).\n- Sunlight takes about 8 minutes and 20 seconds to reach Earth.\n- Our solar system contains 8 recognized planets, Jupiter being the largest and Mercury closest to the Sun.\n- Gravity is the fundamental attraction keeping planets in orbit and holding our atmosphere.",
@@ -155,7 +158,15 @@ object LocalKnowledgeBase {
         "الحفاظ على البطارية", "عمر البطارية", "توفير البطارية", "نصائح للبطارية",
         "حماية البطارية", "صحة البطارية", "اطالة عمر البطارية",
         "battery health", "battery tips", "save battery", "battery lifespan", "battery care",
-        "شحن الهاتف", "بطارية الهاتف"
+        "شحن الهاتف", "بطارية الهاتف",
+        "تنفد البطارية", "نفاد البطارية", "استنزاف البطارية", "استهلاك البطارية",
+        "لماذا تنفد البطارية", "لماذا تنفد البطارية بسرعة", "تفرغ البطارية", "تفرغ البطارية بسرعة",
+        "تنفذ البطارية", "نفاذ البطارية", "لماذا تنفذ البطارية", "لماذا تنفذ البطارية بسرعة",
+        "اسباب نفاد البطارية", "اسباب استهلاك البطارية", "سبب استهلاك البطارية", "اسباب استهلاك الطاقة",
+        "تخلص البطارية", "تهبط البطارية", "تنفد بطاريتي", "تنفذ بطاريتي",
+        "يضر البطارية", "الشحن الليلي", "الشحن طوال الليل",
+        "استهلاك الطاقة", "تقليل استهلاك الطاقة", "توفير الطاقة",
+        "battery drain", "why does battery drain", "draining fast", "overnight charging", "power saving"
       ),
       arabicSummary = "للحفاظ على صحة بطارية هاتفك لأطول فترة:\n1. حاول إبقاء نسبة الشحن بين 20% و80% وتجنب التفريغ الكامل المتكرر.\n2. تجنب تعريض الهاتف للحرارة العالية أثناء الشحن.\n3. خفّض سطوع الشاشة واستخدم الوضع الداكن (Dark Mode).\n4. أغلق البلوتوث والموقع عند عدم الحاجة إليهما.",
       englishSummary = "To maximize your phone's battery lifespan:\n1. Keep charge levels between 20% and 80%, avoiding complete depletion.\n2. Avoid exposing your device to high heat or direct sunlight while charging.\n3. Lower screen brightness and use Dark Mode.\n4. Disable Bluetooth and GPS when not in active use.",
@@ -580,6 +591,11 @@ object LocalKnowledgeBase {
 
     return when (canonicalId) {
       "physics_universe" -> {
+        val resolvedAspect = com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog.resolveTopicAspect(
+          topicId = "physics_universe",
+          query = normalizedQuery,
+          isArabic = isArabic
+        )
         val text = when {
           normalizedQuery.contains("تتكون") || normalizedQuery.contains("تكونت") || normalizedQuery.contains("تتشكل") || normalizedQuery.contains("نشات") || normalizedQuery.contains("form") -> {
             if (isArabic) {
@@ -595,12 +611,18 @@ object LocalKnowledgeBase {
               "Yes, five planets in our solar system can be seen with the naked eye under clear night skies without a telescope: Mercury, Venus (the brightest), Mars (with its reddish hue), Jupiter, and Saturn. Uranus and Neptune require binoculars or a telescope."
             }
           }
+          resolvedAspect != null && (resolvedAspect.aspectId == "gravity_solar_system" || resolvedAspect.aspectId == "gravity" || resolvedAspect.aspectId == "stars") -> {
+            resolvedAspect.responseText
+          }
           normalizedQuery.contains("شمس") || normalizedQuery.contains("دقائق") || normalizedQuery.contains("وصول") || normalizedQuery.contains("sunlight") -> {
             if (isArabic) {
               "يبعد كوكب الأرض عن الشمس حوالي 149.6 مليون كيلومتر، وبما أن الضوء يسير بسرعة 300,000 كم/ثانية، فإن الفوتونات المنبعثة من سطح الشمس تستغرق 8 دقائق و20 ثانية تقريباً لتصل إلينا."
             } else {
               "Earth orbits at an average distance of about 149.6 million kilometers from the Sun. Traveling at 300,000 km/s, sunlight takes roughly 8 minutes and 20 seconds to reach Earth."
             }
+          }
+          resolvedAspect != null -> {
+            resolvedAspect.responseText
           }
           else -> {
             if (isArabic) {
@@ -728,7 +750,12 @@ object LocalKnowledgeBase {
       }
 
       "battery_care" -> {
-        val text = if (isArabic) {
+        val resolvedAspect = com.example.core.intelligence.knowledge.catalog.SeedKnowledgeCatalog.resolveTopicAspect(
+          topicId = "battery_care",
+          query = normalizedQuery,
+          isArabic = isArabic
+        )
+        val text = resolvedAspect?.responseText ?: if (isArabic) {
           "تعمل بطاريات الليثيوم أيون بكفاءة أعلى عندما لا تتعرض للجهد الأقصى (100%) أو التفريغ التام (0%)، لأن البقاء طويلاً عند 100% مع حرارة مرتفعة يسرّع تآكل الخلايا الكيميائية. لذلك فإن الشحن المتقطع بين 20% و80% واستخدام شاحن موثوق يطيل عمر البطارية لسنوات."
         } else {
           "Lithium-ion batteries experience the least chemical stress between 20% and 80% charge. Prolonged heat combined with 100% voltage accelerates capacity degradation, so avoiding overheating while charging preserves long-term battery health."

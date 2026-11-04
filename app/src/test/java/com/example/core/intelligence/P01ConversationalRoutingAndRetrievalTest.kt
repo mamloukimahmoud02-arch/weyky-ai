@@ -281,12 +281,19 @@ class P01ConversationalRoutingAndRetrievalTest {
         )
         val snapshotWithCustom = repository.publishNewSnapshotFromBundles(seedBundles + customBundle)
 
-        // Querying "كيف يعمل الكون؟" or "كيف يعمل النجوم؟" must NOT match generic_verb_topic via "يعمل"
+        // Querying "كيف يعمل المحرك النفاث؟" or "كيف يعمل النجوم؟" must NOT match generic_verb_topic via "يعمل"
         val starsCtx = repository.prepareTurnKnowledgeContext(
             userQuery = "كيف يعمل النجوم؟",
             snapshotOverride = snapshotWithCustom
         )
-        assertNull("Generic verb 'يعمل' alone must not match generic_verb_topic", starsCtx.retrievedTopicId)
+        assertNotEquals("Generic verb 'يعمل' alone must not match generic_verb_topic", "generic_verb_topic", starsCtx.retrievedTopicId)
+        assertEquals("physics_universe", starsCtx.retrievedTopicId)
+
+        val unindexedVerbCtx = repository.prepareTurnKnowledgeContext(
+            userQuery = "كيف يعمل المحرك النفاث؟",
+            snapshotOverride = snapshotWithCustom
+        )
+        assertNull("Generic verb 'يعمل' alone must not match generic_verb_topic for unindexed subject", unindexedVerbCtx.retrievedTopicId)
 
         // Meanwhile, distinctive single-content-token concepts like "ما هو weyky" -> "حدثني عن weyky" still match identity
         val weykyCtx = repository.prepareTurnKnowledgeContext(
