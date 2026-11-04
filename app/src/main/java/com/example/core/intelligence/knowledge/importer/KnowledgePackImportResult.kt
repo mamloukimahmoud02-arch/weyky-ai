@@ -92,7 +92,10 @@ data class KnowledgePackImportResult(
     val snapshotRefreshState: SnapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
     val errors: List<String> = emptyList(),
     val warnings: List<String> = emptyList(),
-    val metrics: KnowledgePackImportMetrics = KnowledgePackImportMetrics()
+    val metrics: KnowledgePackImportMetrics = KnowledgePackImportMetrics(),
+    val committedGeneration: Long = 0L,
+    val publishedGeneration: Long = 0L,
+    val databaseCommitted: Boolean = false
 ) {
     val isSuccess: Boolean
         get() = status == KnowledgePackImportStatus.SUCCESS_IMPORTED ||

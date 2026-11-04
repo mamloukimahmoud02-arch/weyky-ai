@@ -472,6 +472,9 @@ interface KnowledgeDao {
     )
     suspend fun getInactiveOnlyTopicIds(): List<String>
 
+    @Query("DELETE FROM knowledge_topic_details WHERE topic_id = :topicId AND pack_id = :packId")
+    suspend fun deleteTopicDetailByTopicAndPack(topicId: String, packId: String)
+
     // =========================================================================
     // 5. Follow-up Branches Operations
     // =========================================================================
@@ -629,6 +632,8 @@ interface KnowledgeDao {
         }
         if (bundle.detail != null) {
             upsertTopicDetail(bundle.detail)
+        } else {
+            deleteTopicDetailByTopicAndPack(bundle.header.topicId, bundle.header.packId)
         }
         deleteFollowUpBranchesByTopicAndPack(bundle.header.topicId, bundle.header.packId)
         if (bundle.followUpBranches.isNotEmpty()) {

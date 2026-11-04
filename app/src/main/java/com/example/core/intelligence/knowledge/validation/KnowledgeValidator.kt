@@ -95,6 +95,7 @@ object KnowledgeValidator {
         referenceTopicIds: Set<String>? = null,
         enforceCoreTopicProtection: Boolean = true
     ): ValidationResult {
+        val bundleIssues = mutableListOf<ValidationIssue>()
         val allHeaders = ArrayList<KnowledgeTopicHeaderEntity>(bundles.size)
         val allKeywords = ArrayList<KnowledgeKeywordEntity>()
         val allTokens = ArrayList<KnowledgeKeywordTokenEntity>()
@@ -105,26 +106,64 @@ object KnowledgeValidator {
         var syntheticTokenId = 1L
 
         for (bundle in bundles) {
+            val ownerTopicId = bundle.header.topicId
+            val ownerPackId = bundle.header.packId
             allHeaders.add(bundle.header)
             for (kwWithTokens in bundle.keywordsWithTokens) {
-                val kwId = if (kwWithTokens.keyword.keywordId > 0L) {
-                    kwWithTokens.keyword.keywordId
+                val kw = kwWithTokens.keyword
+                if (kw.topicId != ownerTopicId || kw.packId != ownerPackId) {
+                    bundleIssues += ValidationIssue(
+                        category = ValidationIssueCategory.MISSING_REFERENCE,
+                        field = "keyword.topicId/packId",
+                        message = "Keyword '${kw.originalKeyword}' inside bundle ($ownerTopicId, $ownerPackId) has mismatched ownership (${kw.topicId}, ${kw.packId}).",
+                        recordIdentifier = "${kw.topicId}@${kw.packId}#${kw.keywordOrder}"
+                    )
+                }
+                if (kw.tokenCount > 0 && kwWithTokens.tokens.size != kw.tokenCount) {
+                    bundleIssues += ValidationIssue(
+                        category = ValidationIssueCategory.MISSING_REFERENCE,
+                        field = "token.keywordId",
+                        message = "Keyword '${kw.originalKeyword}' in ($ownerTopicId, $ownerPackId) declares tokenCount=${kw.tokenCount} but bundle provided ${kwWithTokens.tokens.size} token record(s).",
+                        recordIdentifier = "${kw.topicId}@${kw.packId}#${kw.keywordOrder}"
+                    )
+                }
+                val kwId = if (kw.keywordId > 0L) {
+                    kw.keywordId
                 } else {
                     syntheticKeywordId++
                 }
-                allKeywords.add(kwWithTokens.keyword.copy(keywordId = kwId))
+                allKeywords.add(kw.copy(keywordId = kwId))
                 for (tok in kwWithTokens.tokens) {
                     val tokId = if (tok.tokenId > 0L) tok.tokenId else syntheticTokenId++
                     allTokens.add(tok.copy(tokenId = tokId, keywordId = kwId))
                 }
             }
             if (bundle.detail != null) {
-                allDetails.add(bundle.detail)
+                val det = bundle.detail
+                if (det.topicId != ownerTopicId || det.packId != ownerPackId) {
+                    bundleIssues += ValidationIssue(
+                        category = ValidationIssueCategory.MISSING_REFERENCE,
+                        field = "detail.topicId/packId",
+                        message = "Detail inside bundle ($ownerTopicId, $ownerPackId) has mismatched ownership (${det.topicId}, ${det.packId}).",
+                        recordIdentifier = "${det.topicId}@${det.packId}"
+                    )
+                }
+                allDetails.add(det)
             }
-            allBranches.addAll(bundle.followUpBranches)
+            for (branch in bundle.followUpBranches) {
+                if (branch.topicId != ownerTopicId || branch.packId != ownerPackId) {
+                    bundleIssues += ValidationIssue(
+                        category = ValidationIssueCategory.MISSING_REFERENCE,
+                        field = "branch.topicId/packId",
+                        message = "Follow-up branch '${branch.branchId}' inside bundle ($ownerTopicId, $ownerPackId) has mismatched ownership (${branch.topicId}, ${branch.packId}).",
+                        recordIdentifier = "${branch.branchId}@${branch.packId}"
+                    )
+                }
+                allBranches.add(branch)
+            }
         }
 
-        return validatePackData(
+        val dataValidation = validatePackData(
             pack = pack,
             topics = allHeaders,
             keywords = allKeywords,
@@ -134,6 +173,11 @@ object KnowledgeValidator {
             referenceTopicIds = referenceTopicIds,
             enforceCoreTopicProtection = enforceCoreTopicProtection
         )
+        return if (bundleIssues.isEmpty()) {
+            dataValidation
+        } else {
+            ValidationResult.Invalid(bundleIssues + dataValidation.issues)
+        }
     }
 
     /**

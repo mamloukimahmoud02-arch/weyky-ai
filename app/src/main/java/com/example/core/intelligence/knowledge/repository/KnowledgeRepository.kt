@@ -30,6 +30,7 @@ import com.example.core.intelligence.knowledge.search.KnowledgeSearchService
 import com.example.core.intelligence.knowledge.search.ScoredTopicCandidate
 import com.example.core.intelligence.knowledge.validation.KnowledgeValidator
 import com.example.core.intelligence.knowledge.validation.ValidationIssue
+import com.example.core.intelligence.knowledge.validation.ValidationIssueCategory
 import kotlinx.coroutines.CoroutineDispatcher
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -99,11 +101,25 @@ sealed class PackMutationResult {
 
     data class SnapshotRebuildFailed(
         val packId: String,
-        val cause: Throwable
+        val cause: Throwable,
+        val committedGeneration: Long = 0L,
+        val publishedGeneration: Long = 0L,
+        val databaseCommitted: Boolean = true
     ) : PackMutationResult() {
         override val isSuccess: Boolean = false
     }
 }
+
+/**
+ * Thrown when a snapshot publication attempt targets a generation older than the currently
+ * published [InMemorySearchSnapshot.knowledgeGeneration].
+ */
+class StaleSnapshotPublicationException(
+    val candidateGeneration: Long,
+    val currentPublishedGeneration: Long
+) : IllegalStateException(
+    "Stale snapshot publication rejected: candidateGeneration=$candidateGeneration < currentPublishedGeneration=$currentPublishedGeneration"
+)
 
 /**
  * Central KnowledgeRepository for WEYKY Phase 2B.2 & Phase 2B.3.
@@ -131,6 +147,8 @@ class KnowledgeRepository(
 ) {
     private val databaseRef = AtomicReference<WeykyKnowledgeDatabase?>(database)
     private val generationCounter = AtomicLong(1L)
+    private val committedGenerationCounter = AtomicLong(1L)
+    private val snapshotStaleFlag = AtomicBoolean(false)
 
     private val snapshotRef = AtomicReference<InMemorySearchSnapshot>(
         InMemorySearchSnapshot.fromSeedCatalog(knowledgeGeneration = generationCounter.get())
@@ -147,6 +165,8 @@ class KnowledgeRepository(
     private val detailDatabaseLoadCounter = AtomicInteger(0)
     private val detailLoadMutexes = ConcurrentHashMap<String, Mutex>()
     private val missingDetailCompositeKeys = ConcurrentHashMap.newKeySet<String>()
+    private val pendingDirtyTopicIds = ConcurrentHashMap.newKeySet<String>()
+    private val pendingDirtyPackIds = ConcurrentHashMap.newKeySet<String>()
 
     @Volatile
     var lastPreparedContext: PreparedTurnKnowledgeContext? = null
@@ -167,6 +187,12 @@ class KnowledgeRepository(
     @Volatile
     internal var retrievalFailureSimulator: (() -> Throwable?)? = null
 
+    @Volatile
+    internal var snapshotPublicationHook: ((InMemorySearchSnapshot) -> Unit)? = null
+
+    @Volatile
+    internal var autoRecoverSnapshotFailureSimulator: (() -> Throwable?)? = null
+
     /**
      * Returns the current immutable [InMemorySearchSnapshot] atomically without any I/O.
      */
@@ -174,10 +200,31 @@ class KnowledgeRepository(
         get() = snapshotRef.get()
 
     /**
-     * Returns the current knowledge generation counter.
+     * Returns the currently published snapshot knowledge generation counter.
      */
     val currentGeneration: Long
         get() = snapshotRef.get().knowledgeGeneration
+
+    /**
+     * Returns the generation of the currently published in-memory [InMemorySearchSnapshot].
+     */
+    val publishedGeneration: Long
+        get() = snapshotRef.get().knowledgeGeneration
+
+    /**
+     * Returns the latest durably committed repository database generation.
+     * Advances ONLY when a database mutation transaction succeeds (or when a direct snapshot
+     * publication advances the active generation). Never advances on a failed/rolled-back transaction.
+     */
+    val committedGeneration: Long
+        get() = committedGenerationCounter.get()
+
+    /**
+     * True when a database mutation transaction has committed in Room (`committedGeneration > publishedGeneration`)
+     * but the corresponding [InMemorySearchSnapshot] has not yet been built and published.
+     */
+    val isSnapshotStale: Boolean
+        get() = snapshotStaleFlag.get() || snapshotRef.get().knowledgeGeneration < committedGenerationCounter.get()
 
     val totalSearchInvocations: Int
         get() = searchInvocationCounter.get()
@@ -201,10 +248,100 @@ class KnowledgeRepository(
     }
 
     /**
+     * Serializes repository-wide mutations (pack imports, pack lifecycle updates, seed initialization,
+     * and snapshot recovery) through a single coherent [Mutex] without blocking normal read-only searches.
+     */
+    internal suspend fun <T> withRepositoryMutationLock(block: suspend () -> T): T =
+        initializationMutex.withLock { block() }
+
+    /**
+     * Records that a database transaction has durably committed in Room prior to snapshot rebuilding:
+     * 1. Advances [committedGenerationCounter] monotonically so committed DB state is distinguishable
+     *    from [publishedGeneration].
+     * 2. Marks [snapshotStaleFlag] = `true` until a matching or newer snapshot is published.
+     * 3. Records [affectedTopicIds] and [affectedPackId] in pending dirty sets and immediately
+     *    invalidates affected cache entries so stale headers/details/scores cannot be served.
+     */
+    internal fun recordCommittedDatabaseMutation(
+        affectedTopicIds: Collection<String>,
+        affectedPackId: String? = null
+    ): Long {
+        val committedGen = committedGenerationCounter.updateAndGet { current ->
+            maxOf(current, snapshotRef.get().knowledgeGeneration) + 1L
+        }
+        snapshotStaleFlag.set(true)
+        if (affectedTopicIds.isNotEmpty()) {
+            pendingDirtyTopicIds.addAll(affectedTopicIds)
+            for (topicId in affectedTopicIds) {
+                missingDetailCompositeKeys.removeIf { it.startsWith("$topicId@") }
+            }
+        }
+        if (!affectedPackId.isNullOrBlank()) {
+            pendingDirtyPackIds.add(affectedPackId)
+            missingDetailCompositeKeys.removeIf { it.contains("@$affectedPackId#") }
+        }
+        cache.invalidateForTopicsAndPack(affectedTopicIds, affectedPackId)
+        return committedGen
+    }
+
+    /**
+     * Fast, zero-overhead check in normal operation (`!isSnapshotStale`).
+     * When the in-memory snapshot was left stale by a prior post-commit snapshot failure and no
+     * mutation currently holds [initializationMutex], deterministically recovers the snapshot from Room
+     * so subsequent reads do not silently observe stale data.
+     */
+    private fun ensureSnapshotConsistentBeforeRead() {
+        if (!isSnapshotStale) return
+        if (databaseRef.get() == null) return
+        if (!initializationMutex.tryLock()) return
+        try {
+            if (!isSnapshotStale) return
+            runCatching {
+                runBlocking(ioDispatcher) {
+                    recoverStaleSnapshotUnderLock()
+                }
+            }
+        } finally {
+            initializationMutex.unlock()
+        }
+    }
+
+    /**
+     * Deterministically recovers the active [InMemorySearchSnapshot] from the committed Room database
+     * when [isSnapshotStale] is `true`.
+     */
+    suspend fun recoverStaleSnapshotIfNeeded(): Boolean = withContext(ioDispatcher) {
+        if (!isSnapshotStale) return@withContext true
+        initializationMutex.withLock {
+            if (!isSnapshotStale) return@withLock true
+            recoverStaleSnapshotUnderLock()
+        }
+    }
+
+    internal suspend fun recoverStaleSnapshotUnderLock(
+        simulatedRecoveryFailure: (() -> Unit)? = null
+    ): Boolean {
+        return runCatching {
+            simulatedRecoveryFailure?.invoke()
+            autoRecoverSnapshotFailureSimulator?.invoke()?.let { throw it }
+            val db = databaseRef.get()
+                ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+            val dao = db.knowledgeDao()
+            val bundles = loadActiveTopicStorageBundlesFromDao(dao)
+            if (bundles.isEmpty()) {
+                throw IllegalStateException("Active topic bundles from database are empty during snapshot recovery.")
+            }
+            publishNewSnapshotFromBundles(bundles = bundles)
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
      * Synchronous, zero-I/O topic lookup by ID from the active in-memory snapshot (with header
-     * cache integration).
+     * cache integration and automatic recovery if a prior post-commit snapshot was left stale).
      */
     fun getTopicById(topicId: String): LocalKnowledgeBase.KnowledgeTopic? {
+        ensureSnapshotConsistentBeforeRead()
         cache.getHeader(topicId)?.let { return it }
         val topic = snapshotRef.get().topicsById[topicId] ?: return null
         cache.putHeader(topicId, topic)
@@ -213,7 +350,8 @@ class KnowledgeRepository(
 
     /**
      * Synchronous, zero-I/O search against the active [InMemorySearchSnapshot].
-     * Never touches Room or SQLite.
+     * Never touches Room or SQLite in normal operation; automatically recovers if a prior
+     * post-commit snapshot was left stale.
      */
     fun search(
         query: String,
@@ -221,6 +359,9 @@ class KnowledgeRepository(
         snapshotOverride: InMemorySearchSnapshot? = null
     ): KnowledgeSearchResult {
         searchInvocationCounter.incrementAndGet()
+        if (snapshotOverride == null) {
+            ensureSnapshotConsistentBeforeRead()
+        }
         val snap = snapshotOverride ?: snapshotRef.get()
         return searchService.search(
             query = query,
@@ -247,6 +388,7 @@ class KnowledgeRepository(
         query: String,
         currentTopicId: String? = null
     ): KnowledgeSearchResult {
+        ensureSnapshotConsistentBeforeRead()
         return searchService.searchExhaustive(
             query = query,
             currentTopicId = currentTopicId,
@@ -281,6 +423,9 @@ class KnowledgeRepository(
         return try {
             retrievalFailureSimulator?.invoke()?.let { throw it }
 
+            if (snapshotOverride == null) {
+                ensureSnapshotConsistentBeforeRead()
+            }
             val snapshot = snapshotOverride ?: snapshotRef.get()
             val strictNormalized = LocalKnowledgeBase.normalizeArabicStrict(cleanQuery)
             val relaxedNormalized = LocalKnowledgeBase.normalizeArabic(cleanQuery)
@@ -812,49 +957,116 @@ class KnowledgeRepository(
 
     /**
      * Builds and atomically publishes a new [InMemorySearchSnapshot] outside the active reference,
-     * then invalidates stale cache entries.
-     *
-     * When [affectedTopicIds] is provided, only affected topic headers and detail bundles (plus
-     * [KnowledgeCache.rawScoreCache]) are invalidated, preserving unaffected cached details.
-     * When [affectedTopicIds] is null, invalidates all cache partitions (`cache.invalidateAll()`).
+     * enforces monotonic generation ordering (never allowing an older generation to overwrite a
+     * newer published snapshot), and performs targeted cache invalidation for affected topics/packs.
      */
     fun publishNewSnapshotFromBundles(
         bundles: List<TopicStorageBundle>,
         affectedTopicIds: Collection<String>? = null,
-        affectedPackId: String? = null
+        affectedPackId: String? = null,
+        targetGenerationOverride: Long? = null
     ): InMemorySearchSnapshot {
         require(bundles.isNotEmpty()) { "Cannot publish snapshot from empty bundles" }
         val startNanos = System.nanoTime()
-        val nextGen = generationCounter.incrementAndGet()
+        val targetGen = targetGenerationOverride ?: maxOf(
+            committedGenerationCounter.get(),
+            snapshotRef.get().knowledgeGeneration + 1L
+        )
         val candidateSnapshot = InMemorySearchSnapshot.fromTopicStorageBundles(
-            knowledgeGeneration = nextGen,
+            knowledgeGeneration = targetGen,
             bundles = bundles
         )
         check(candidateSnapshot.topicCount > 0 && candidateSnapshot.keywordCount > 0) {
             "Constructed snapshot is invalid (topicCount=${candidateSnapshot.topicCount}, keywordCount=${candidateSnapshot.keywordCount})"
         }
-        snapshotRef.set(candidateSnapshot)
+
+        snapshotPublicationHook?.invoke(candidateSnapshot)
+
+        var previousSnapshot: InMemorySearchSnapshot
+        while (true) {
+            val currentSnap = snapshotRef.get()
+            if (candidateSnapshot.knowledgeGeneration < currentSnap.knowledgeGeneration) {
+                throw StaleSnapshotPublicationException(
+                    candidateGeneration = candidateSnapshot.knowledgeGeneration,
+                    currentPublishedGeneration = currentSnap.knowledgeGeneration
+                )
+            }
+            if (snapshotRef.compareAndSet(currentSnap, candidateSnapshot)) {
+                previousSnapshot = currentSnap
+                break
+            }
+        }
+
+        generationCounter.updateAndGet { maxOf(it, candidateSnapshot.knowledgeGeneration) }
+        committedGenerationCounter.updateAndGet { maxOf(it, candidateSnapshot.knowledgeGeneration) }
+        if (snapshotRef.get().knowledgeGeneration >= committedGenerationCounter.get()) {
+            snapshotStaleFlag.set(false)
+        }
         lastSnapshotBuildDurationMicros = (System.nanoTime() - startNanos) / 1_000L
 
-        if (affectedTopicIds != null) {
-            for (topicId in affectedTopicIds) {
-                missingDetailCompositeKeys.removeIf { it.startsWith("$topicId@") }
-            }
-            if (!affectedPackId.isNullOrBlank()) {
-                missingDetailCompositeKeys.removeIf { it.contains("@$affectedPackId#") }
-            }
-            cache.invalidateForTopicsAndPack(affectedTopicIds, affectedPackId)
-            val activeVersionKeys = candidateSnapshot.activeTopicIdentitiesById.mapValues { (_, id) ->
-                id.compositeDetailKey
-            }
-            cache.invalidateStaleEntriesAgainstActiveState(
-                activeTopicsById = candidateSnapshot.topicsById,
-                activeVersionKeysByTopicId = activeVersionKeys
-            )
-        } else {
-            missingDetailCompositeKeys.clear()
-            cache.invalidateAll()
+        val drainedDirtyTopics = HashSet<String>()
+        val topicIter = pendingDirtyTopicIds.iterator()
+        while (topicIter.hasNext()) {
+            val tId = topicIter.next()
+            drainedDirtyTopics.add(tId)
+            topicIter.remove()
         }
+
+        val drainedDirtyPacks = HashSet<String>()
+        val packIter = pendingDirtyPackIds.iterator()
+        while (packIter.hasNext()) {
+            val pId = packIter.next()
+            drainedDirtyPacks.add(pId)
+            packIter.remove()
+        }
+
+        val diffChangedTopics = HashSet<String>()
+        val allKnownTopicIds = HashSet<String>(
+            previousSnapshot.topicsById.size + candidateSnapshot.topicsById.size
+        ).apply {
+            addAll(previousSnapshot.topicsById.keys)
+            addAll(candidateSnapshot.topicsById.keys)
+        }
+        for (tId in allKnownTopicIds) {
+            if (previousSnapshot.topicsById[tId] != candidateSnapshot.topicsById[tId] ||
+                previousSnapshot.activeTopicIdentitiesById[tId] != candidateSnapshot.activeTopicIdentitiesById[tId]
+            ) {
+                diffChangedTopics.add(tId)
+            }
+        }
+
+        val effectiveAffectedTopics = LinkedHashSet<String>().apply {
+            affectedTopicIds?.let { addAll(it) }
+            addAll(drainedDirtyTopics)
+            addAll(diffChangedTopics)
+        }
+        val effectiveAffectedPacks = LinkedHashSet<String>().apply {
+            if (!affectedPackId.isNullOrBlank()) add(affectedPackId)
+            addAll(drainedDirtyPacks)
+        }
+
+        for (topicId in effectiveAffectedTopics) {
+            missingDetailCompositeKeys.removeIf { it.startsWith("$topicId@") }
+        }
+        for (packId in effectiveAffectedPacks) {
+            missingDetailCompositeKeys.removeIf { it.contains("@$packId#") }
+        }
+
+        if (effectiveAffectedPacks.isEmpty()) {
+            cache.invalidateForTopicsAndPack(effectiveAffectedTopics, null)
+        } else {
+            for (packId in effectiveAffectedPacks) {
+                cache.invalidateForTopicsAndPack(effectiveAffectedTopics, packId)
+            }
+        }
+
+        val activeVersionKeys = candidateSnapshot.activeTopicIdentitiesById.mapValues { (_, id) ->
+            id.compositeDetailKey
+        }
+        cache.invalidateStaleEntriesAgainstActiveState(
+            activeTopicsById = candidateSnapshot.topicsById,
+            activeVersionKeysByTopicId = activeVersionKeys
+        )
         return candidateSnapshot
     }
 
@@ -879,22 +1091,67 @@ class KnowledgeRepository(
         simulatedSnapshotBuildFailure: (() -> Unit)? = null
     ): PackMutationResult = withContext(ioDispatcher) {
         initializationMutex.withLock {
+            val db = databaseRef.get()
+            val dao = db?.knowledgeDao()
+
+            val incomingTopicIds = topics.map { it.header.topicId }.toSet()
+            val removedWithoutFallback = HashSet<String>()
+            val effectiveReferenceIds: Set<String>? = if (referenceTopicIds != null) {
+                referenceTopicIds
+            } else if (dao != null) {
+                val currentActiveIds = runCatching {
+                    dao.getAllActiveTopicHeadersOrdered().map { it.topicId }.toSet()
+                }.getOrDefault(emptySet()).ifEmpty {
+                    snapshotRef.get().topicsById.keys
+                }
+                val previousPackTopicIds = runCatching {
+                    dao.getTopicIdsByPack(pack.packId).toSet()
+                }.getOrDefault(emptySet())
+                val removedFromThisPack = previousPackTopicIds - incomingTopicIds
+                for (removedId in removedFromThisPack) {
+                    val alternativeActiveExists = runCatching {
+                        dao.getAllTopicVersionsForTopicId(removedId).any { header ->
+                            header.packId != pack.packId && header.packPriority >= 0
+                        }
+                    }.getOrDefault(false)
+                    if (!alternativeActiveExists) {
+                        removedWithoutFallback.add(removedId)
+                    }
+                }
+                (currentActiveIds - removedWithoutFallback) + incomingTopicIds
+            } else {
+                null
+            }
+
             val validation = KnowledgeValidator.validatePackBundles(
                 pack = pack,
                 bundles = topics,
-                referenceTopicIds = referenceTopicIds,
+                referenceTopicIds = effectiveReferenceIds,
                 enforceCoreTopicProtection = enforceCoreTopicProtection
             )
-            if (!validation.isValid) {
-                return@withLock PackMutationResult.ValidationRejected(pack.packId, validation.issues)
+            val dependentIssues = if (dao != null && removedWithoutFallback.isNotEmpty()) {
+                findBrokenIncomingReferencesFromOtherPacks(
+                    targetPackId = pack.packId,
+                    removedWithoutFallback = removedWithoutFallback,
+                    dao = dao
+                )
+            } else {
+                emptyList()
             }
 
-            val db = databaseRef.get()
-                ?: return@withLock PackMutationResult.TransactionFailed(
+            if (!validation.isValid || dependentIssues.isNotEmpty()) {
+                return@withLock PackMutationResult.ValidationRejected(
+                    pack.packId,
+                    validation.issues + dependentIssues
+                )
+            }
+
+            if (db == null || dao == null) {
+                return@withLock PackMutationResult.TransactionFailed(
                     pack.packId,
                     IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
                 )
-            val dao = db.knowledgeDao()
+            }
 
             val affectedTopicIds: Set<String> = try {
                 db.withTransaction {
@@ -905,6 +1162,8 @@ class KnowledgeRepository(
             } catch (txError: Throwable) {
                 return@withLock PackMutationResult.TransactionFailed(pack.packId, txError)
             }
+
+            recordCommittedDatabaseMutation(affectedTopicIds = affectedTopicIds, affectedPackId = pack.packId)
 
             return@withLock rebuildAndPublishAfterCommittedMutation(
                 packId = pack.packId,
@@ -929,11 +1188,18 @@ class KnowledgeRepository(
                         IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
                     )
                 val dao = db.knowledgeDao()
+                if (packId != SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
+                    val dependentIssues = findBrokenIncomingReferencesOnPackRemovalOrDeactivation(packId, dao)
+                    if (dependentIssues.isNotEmpty()) {
+                        return@withLock PackMutationResult.ValidationRejected(packId, dependentIssues)
+                    }
+                }
                 val affectedTopicIds = try {
                     dao.deactivatePackTransactional(packId)
                 } catch (txError: Throwable) {
                     return@withLock PackMutationResult.TransactionFailed(packId, txError)
                 }
+                recordCommittedDatabaseMutation(affectedTopicIds = affectedTopicIds, affectedPackId = packId)
                 rebuildAndPublishAfterCommittedMutation(
                     packId = packId,
                     affectedTopicIds = affectedTopicIds,
@@ -962,6 +1228,7 @@ class KnowledgeRepository(
             } catch (txError: Throwable) {
                 return@withLock PackMutationResult.TransactionFailed(packId, txError)
             }
+            recordCommittedDatabaseMutation(affectedTopicIds = affectedTopicIds, affectedPackId = packId)
             rebuildAndPublishAfterCommittedMutation(
                 packId = packId,
                 affectedTopicIds = affectedTopicIds,
@@ -990,6 +1257,7 @@ class KnowledgeRepository(
             } catch (txError: Throwable) {
                 return@withLock PackMutationResult.TransactionFailed(packId, txError)
             }
+            recordCommittedDatabaseMutation(affectedTopicIds = affectedTopicIds, affectedPackId = packId)
             rebuildAndPublishAfterCommittedMutation(
                 packId = packId,
                 affectedTopicIds = affectedTopicIds,
@@ -1011,6 +1279,12 @@ class KnowledgeRepository(
                         IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
                     )
                 val dao = db.knowledgeDao()
+                if (packId != SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
+                    val dependentIssues = findBrokenIncomingReferencesOnPackRemovalOrDeactivation(packId, dao)
+                    if (dependentIssues.isNotEmpty()) {
+                        return@withLock PackMutationResult.ValidationRejected(packId, dependentIssues)
+                    }
+                }
                 val affectedTopicIds = try {
                     db.withTransaction {
                         val affected = dao.getTopicIdsByPack(packId).toSet()
@@ -1020,6 +1294,7 @@ class KnowledgeRepository(
                 } catch (txError: Throwable) {
                     return@withLock PackMutationResult.TransactionFailed(packId, txError)
                 }
+                recordCommittedDatabaseMutation(affectedTopicIds = affectedTopicIds, affectedPackId = packId)
                 rebuildAndPublishAfterCommittedMutation(
                     packId = packId,
                     affectedTopicIds = affectedTopicIds,
@@ -1027,6 +1302,58 @@ class KnowledgeRepository(
                 )
             }
         }
+
+    private suspend fun findBrokenIncomingReferencesOnPackRemovalOrDeactivation(
+        packId: String,
+        dao: KnowledgeDao
+    ): List<ValidationIssue> {
+        val packTopicIds = runCatching { dao.getTopicIdsByPack(packId).toSet() }.getOrDefault(emptySet())
+        if (packTopicIds.isEmpty()) return emptyList()
+        val removedWithoutFallback = HashSet<String>()
+        for (topicId in packTopicIds) {
+            val alternativeActiveExists = runCatching {
+                dao.getAllTopicVersionsForTopicId(topicId).any { header ->
+                    header.packId != packId && header.packPriority >= 0
+                }
+            }.getOrDefault(false)
+            if (!alternativeActiveExists) {
+                removedWithoutFallback.add(topicId)
+            }
+        }
+        if (removedWithoutFallback.isEmpty()) return emptyList()
+        return findBrokenIncomingReferencesFromOtherPacks(
+            targetPackId = packId,
+            removedWithoutFallback = removedWithoutFallback,
+            dao = dao
+        )
+    }
+
+    private suspend fun findBrokenIncomingReferencesFromOtherPacks(
+        targetPackId: String,
+        removedWithoutFallback: Set<String>,
+        dao: KnowledgeDao
+    ): List<ValidationIssue> {
+        val activeProjections = runCatching {
+            dao.getActiveTopicRelatedRefsProjections()
+        }.getOrDefault(emptyList())
+        if (activeProjections.isEmpty()) return emptyList()
+        val issues = mutableListOf<ValidationIssue>()
+        for (proj in activeProjections) {
+            if (proj.packId == targetPackId) continue
+            val refs = converters.toStringList(proj.relatedTopicIdsJson)
+            for (ref in refs) {
+                if (ref in removedWithoutFallback) {
+                    issues += ValidationIssue(
+                        category = ValidationIssueCategory.MISSING_REFERENCE,
+                        field = "detail.relatedTopicIdsJson",
+                        message = "Mutating pack '$targetPackId' would remove active topic '$ref', breaking an active reference held by topic '${proj.topicId}' in pack '${proj.packId}'.",
+                        recordIdentifier = "${proj.topicId}@${proj.packId}"
+                    )
+                }
+            }
+        }
+        return issues
+    }
 
     private suspend fun rebuildAndPublishAfterCommittedMutation(
         packId: String,
@@ -1052,7 +1379,13 @@ class KnowledgeRepository(
                 activeTopicCount = published.topicCount
             )
         } catch (buildError: Throwable) {
-            PackMutationResult.SnapshotRebuildFailed(packId, buildError)
+            PackMutationResult.SnapshotRebuildFailed(
+                packId = packId,
+                cause = buildError,
+                committedGeneration = committedGeneration,
+                publishedGeneration = publishedGeneration,
+                databaseCommitted = true
+            )
         }
     }
 
@@ -1194,6 +1527,9 @@ class KnowledgeRepository(
                 dbQueriesExecuted = 0
             )
 
+        if (snapshotOverride == null && isSnapshotStale) {
+            recoverStaleSnapshotIfNeeded()
+        }
         val snap = snapshotOverride ?: snapshotRef.get()
         val identity = snap.getActiveIdentity(canonicalId)
             ?: return TopicDetailLoadResult(

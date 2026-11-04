@@ -511,7 +511,8 @@ class KnowledgePackJsonParser(
         val resolvedCategory = category ?: "general"
 
         // Merge topic-level referenceTopicIds with detail.relatedTopicIds:
-        // If either list contains internal duplicates, preserve them so reference validation rejects them;
+        // If either list contains internal duplicates, preserve all entries from both lists so
+        // reference validation detects both duplicates and any non-existent references;
         // otherwise combine them without duplicating entries that appear in both topic and detail.
         val hasTopicLevelDuplicates = referenceTopicIds != null &&
             referenceTopicIds.size != referenceTopicIds.distinct().size
@@ -519,8 +520,9 @@ class KnowledgePackJsonParser(
             detail.relatedTopicIds.size != detail.relatedTopicIds.distinct().size
 
         val mergedReferenceIds = when {
-            hasTopicLevelDuplicates -> referenceTopicIds!!
-            hasDetailLevelDuplicates -> detail!!.relatedTopicIds
+            hasTopicLevelDuplicates || hasDetailLevelDuplicates -> {
+                referenceTopicIds.orEmpty() + detail?.relatedTopicIds.orEmpty()
+            }
             referenceTopicIds != null && detail != null && detail.relatedTopicIds.isNotEmpty() -> {
                 (referenceTopicIds + detail.relatedTopicIds).distinct()
             }

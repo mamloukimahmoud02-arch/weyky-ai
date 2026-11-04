@@ -144,6 +144,9 @@ class KnowledgePackImporter(
             val totalMs = (System.nanoTime() - startNanos) / 1_000_000L
             return@withContext KnowledgePackImportResult(
                 status = KnowledgePackImportStatus.PARSING_FAILURE,
+                committedGeneration = repository.committedGeneration,
+                publishedGeneration = repository.publishedGeneration,
+                databaseCommitted = false,
                 errors = listOf("Failed to open asset '$assetPath': ${err.message}"),
                 snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
                 metrics = KnowledgePackImportMetrics(
@@ -173,514 +176,686 @@ class KnowledgePackImporter(
         simulatedSnapshotBuildFailure: (() -> Unit)?,
         simulatedRecoveryFailure: (() -> Unit)?
     ): KnowledgePackImportResult = importMutex.withLock {
-        when (parseOutcome) {
-            is KnowledgePackParseOutcome.Failure -> {
-                val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                return@withLock KnowledgePackImportResult(
-                    status = parseOutcome.status,
-                    packId = parseOutcome.packId,
-                    packVersion = parseOutcome.packVersion,
-                    contentVersion = parseOutcome.contentVersion,
-                    activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                    rawBytesSha256 = parseOutcome.rawBytesSha256,
-                    snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                    errors = parseOutcome.errors,
-                    metrics = KnowledgePackImportMetrics(
-                        parseTimeMs = parseOutcome.parseTimeMs,
-                        totalImportTimeMs = totalMs,
-                        inputByteCount = parseOutcome.inputByteCount,
-                        detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                    )
-                )
-            }
-            is KnowledgePackParseOutcome.Success -> {
-                val parsedPack = parseOutcome.pack
-                val parseTimeMs = parseOutcome.parseTimeMs
-                val validationStartNanos = System.nanoTime()
-
-                // 1. Compute canonical logical SHA-256 (excludes contentSha256 field)
-                val rawSha256 = parsedPack.rawBytesSha256
-                val logicalSha256 = KnowledgePackSpecificationV1.computeLogicalContentSha256(parsedPack)
-
-                // 2. Verify expectedSha256 & embedded contentSha256
-                val hashErrors = verifyChecksums(
-                    rawSha256 = rawSha256,
-                    logicalSha256 = logicalSha256,
-                    expectedSha256 = expectedSha256,
-                    embeddedContentSha256 = parsedPack.contentSha256
-                )
-                if (hashErrors.isNotEmpty()) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+        repository.withRepositoryMutationLock {
+            when (parseOutcome) {
+                is KnowledgePackParseOutcome.Failure -> {
                     val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.HASH_MISMATCH,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
+                    return@withRepositoryMutationLock KnowledgePackImportResult(
+                        status = parseOutcome.status,
+                        packId = parseOutcome.packId,
+                        packVersion = parseOutcome.packVersion,
+                        contentVersion = parseOutcome.contentVersion,
                         activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
+                        committedGeneration = repository.committedGeneration,
+                        publishedGeneration = repository.publishedGeneration,
+                        databaseCommitted = false,
+                        rawBytesSha256 = parseOutcome.rawBytesSha256,
                         snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = hashErrors,
+                        errors = parseOutcome.errors,
                         metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
+                            parseTimeMs = parseOutcome.parseTimeMs,
                             totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
+                            inputByteCount = parseOutcome.inputByteCount,
                             detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
                         )
                     )
                 }
+                is KnowledgePackParseOutcome.Success -> {
+                    val parsedPack = parseOutcome.pack
+                    val parseTimeMs = parseOutcome.parseTimeMs
+                    val validationStartNanos = System.nanoTime()
 
-                // 3. Check Core Seed Protection BEFORE any other conflict/storage logic
-                val coreProtectionErrors = checkCoreProtection(parsedPack)
-                if (coreProtectionErrors.isNotEmpty()) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.CORE_PROTECTION_VIOLATION,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = coreProtectionErrors,
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
+                    // 1. Compute canonical logical SHA-256 (excludes contentSha256 field)
+                    val rawSha256 = parsedPack.rawBytesSha256
+                    val logicalSha256 = KnowledgePackSpecificationV1.computeLogicalContentSha256(parsedPack)
+
+                    // 2. Verify expectedSha256 & embedded contentSha256
+                    val hashErrors = verifyChecksums(
+                        rawSha256 = rawSha256,
+                        logicalSha256 = logicalSha256,
+                        expectedSha256 = expectedSha256,
+                        embeddedContentSha256 = parsedPack.contentSha256
                     )
-                }
-
-                // 4. Intra-pack duplicate & semantic validation
-                val duplicateTopicErrors = checkIntraPackDuplicateTopics(parsedPack)
-                if (duplicateTopicErrors.isNotEmpty()) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.DUPLICATE_CONFLICT,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = duplicateTopicErrors,
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-
-                val preValidationErrors = validateParsedPackSemantics(parsedPack)
-                if (preValidationErrors.isNotEmpty()) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.VALIDATION_FAILED,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = preValidationErrors,
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-
-                val dao = database.knowledgeDao()
-
-                // Ensure core seed is persisted in Room so active winner resolution and reference checks
-                // always see the 11 protected core seed topics in the database.
-                val seedReady = runCatching {
-                    repository.ensureCoreSeedPersistedInDatabase()
-                }.getOrDefault(false)
-                if (!seedReady) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.STORAGE_FAILURE,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = listOf("Database failed to verify or initialize core_seed_pack prior to import."),
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-
-                // 5. Check Existing Pack in Room for Idempotency / Version Progression / Conflict
-                val existingPack = runCatching { dao.getPackMetadataById(parsedPack.packId) }.getOrNull()
-                val existingHeaders = if (existingPack != null) {
-                    runCatching { dao.getTopicHeadersByPackOrdered(parsedPack.packId) }.getOrDefault(emptyList())
-                } else {
-                    emptyList()
-                }
-                val isUpdatingExistingPack = existingPack != null
-
-                if (existingPack != null) {
-                    val existingMaxContentVersion = existingHeaders.maxOfOrNull { it.contentVersion }
-                        ?: existingPack.packVersion
-                    val storedChecksum = existingPack.sha256Checksum
-                    val isIdenticalChecksum = storedChecksum.equals(logicalSha256, ignoreCase = true) ||
-                        storedChecksum.equals(rawSha256, ignoreCase = true)
-
-                    when {
-                        // Exact same version and identical content/checksum -> ALREADY_IMPORTED (idempotent no-op)
-                        parsedPack.packVersion == existingPack.packVersion &&
-                            parsedPack.contentVersion == existingMaxContentVersion &&
-                            isIdenticalChecksum -> {
-                            val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                            val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                            return@withLock KnowledgePackImportResult(
-                                status = KnowledgePackImportStatus.ALREADY_IMPORTED,
-                                packId = parsedPack.packId,
-                                packVersion = parsedPack.packVersion,
-                                contentVersion = parsedPack.contentVersion,
-                                importedTopicCount = 0,
-                                updatedTopicCount = 0,
-                                skippedTopicCount = parsedPack.topics.size,
-                                rejectedTopicCount = 0,
-                                activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                                rawBytesSha256 = rawSha256,
-                                logicalContentSha256 = logicalSha256,
-                                snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                                warnings = listOf(
-                                    "Pack '${parsedPack.packId}' (v${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is already imported with matching SHA-256."
-                                ),
-                                metrics = KnowledgePackImportMetrics(
-                                    parseTimeMs = parseTimeMs,
-                                    validationTimeMs = valMs,
-                                    totalImportTimeMs = totalMs,
-                                    inputByteCount = parsedPack.rawByteSize,
-                                    detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                                )
-                            )
-                        }
-
-                        // Same version (packVersion + contentVersion) but different content -> DUPLICATE_CONFLICT
-                        parsedPack.packVersion == existingPack.packVersion &&
-                            parsedPack.contentVersion == existingMaxContentVersion &&
-                            !isIdenticalChecksum -> {
-                            val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                            val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                            return@withLock KnowledgePackImportResult(
-                                status = KnowledgePackImportStatus.DUPLICATE_CONFLICT,
-                                packId = parsedPack.packId,
-                                packVersion = parsedPack.packVersion,
-                                contentVersion = parsedPack.contentVersion,
-                                rejectedTopicCount = parsedPack.topics.size,
-                                activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                                rawBytesSha256 = rawSha256,
-                                logicalContentSha256 = logicalSha256,
-                                snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                                errors = listOf(
-                                    "Conflict for pack '${parsedPack.packId}': version (packVersion=${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is already imported with a different SHA-256 checksum."
-                                ),
-                                metrics = KnowledgePackImportMetrics(
-                                    parseTimeMs = parseTimeMs,
-                                    validationTimeMs = valMs,
-                                    totalImportTimeMs = totalMs,
-                                    inputByteCount = parsedPack.rawByteSize,
-                                    detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                                )
-                            )
-                        }
-
-                        // Older packVersion or older contentVersion -> DUPLICATE_CONFLICT
-                        parsedPack.packVersion < existingPack.packVersion ||
-                            (parsedPack.packVersion == existingPack.packVersion &&
-                                parsedPack.contentVersion < existingMaxContentVersion) -> {
-                            val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                            val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                            return@withLock KnowledgePackImportResult(
-                                status = KnowledgePackImportStatus.DUPLICATE_CONFLICT,
-                                packId = parsedPack.packId,
-                                packVersion = parsedPack.packVersion,
-                                contentVersion = parsedPack.contentVersion,
-                                rejectedTopicCount = parsedPack.topics.size,
-                                activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                                rawBytesSha256 = rawSha256,
-                                logicalContentSha256 = logicalSha256,
-                                snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                                errors = listOf(
-                                    "Downgrade rejected for pack '${parsedPack.packId}': incoming version (packVersion=${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is older than installed version (packVersion=${existingPack.packVersion}, contentVersion=$existingMaxContentVersion)."
-                                ),
-                                metrics = KnowledgePackImportMetrics(
-                                    parseTimeMs = parseTimeMs,
-                                    validationTimeMs = valMs,
-                                    totalImportTimeMs = totalMs,
-                                    inputByteCount = parsedPack.rawByteSize,
-                                    detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // 6. Validate Topic Reference Integrity (intra-pack, active snapshot, inactive packs, & removed dependents)
-                val referenceValidation = validateReferenceIntegrity(
-                    parsedPack = parsedPack,
-                    existingHeadersForSamePack = existingHeaders,
-                    dao = dao
-                )
-                if (referenceValidation.errors.isNotEmpty()) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.REFERENCE_INVALID,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = referenceValidation.errors,
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-
-                // 7. Convert Parsed DTOs to Room Entities & Validate via KnowledgeValidator
-                val packEntity = buildPackMetadataEntity(parsedPack, logicalSha256)
-                val topicBundles = try {
-                    buildTopicStorageBundles(parsedPack, rawSha256, logicalSha256)
-                } catch (convError: Throwable) {
-                    val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.VALIDATION_FAILED,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = listOf("Failed to build storage entities: ${convError.message}"),
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = valMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-
-                val validatorResult = KnowledgeValidator.validatePackBundles(
-                    pack = packEntity,
-                    bundles = topicBundles,
-                    referenceTopicIds = referenceValidation.effectiveActiveTopicIdsAfterImport,
-                    enforceCoreTopicProtection = true
-                )
-                val validationTimeMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
-
-                if (!validatorResult.isValid) {
-                    val mappedStatus = classifyValidatorIssues(validatorResult.issues)
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = mappedStatus,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = validatorResult.issues.map {
-                            "[${it.category}] ${it.field}(${it.recordIdentifier ?: "pack"}): ${it.message}"
-                        },
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = validationTimeMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-
-                // 8. Execute Atomic Database Transaction
-                val storageStartNanos = System.nanoTime()
-                val affectedTopicIds: Set<String> = try {
-                    database.withTransaction {
-                        val affected = dao.upsertPackWithTopicsTransactional(packEntity, topicBundles)
-                        simulatedMidTransactionFailure?.invoke()
-                        affected
-                    }
-                } catch (txError: Throwable) {
-                    val storageMs = (System.nanoTime() - storageStartNanos) / 1_000_000L
-                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                    return@withLock KnowledgePackImportResult(
-                        status = KnowledgePackImportStatus.STORAGE_FAILURE,
-                        packId = parsedPack.packId,
-                        packVersion = parsedPack.packVersion,
-                        contentVersion = parsedPack.contentVersion,
-                        rejectedTopicCount = parsedPack.topics.size,
-                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                        rawBytesSha256 = rawSha256,
-                        logicalContentSha256 = logicalSha256,
-                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
-                        errors = listOf("Atomic database transaction failed and was rolled back: ${txError.message}"),
-                        metrics = KnowledgePackImportMetrics(
-                            parseTimeMs = parseTimeMs,
-                            validationTimeMs = validationTimeMs,
-                            storageTransactionTimeMs = storageMs,
-                            totalImportTimeMs = totalMs,
-                            inputByteCount = parsedPack.rawByteSize,
-                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
-                        )
-                    )
-                }
-                val storageTimeMs = (System.nanoTime() - storageStartNanos) / 1_000_000L
-
-                // 9. Rebuild & Publish Active Snapshot from Committed DB State (with Automatic Recovery)
-                val snapshotStartNanos = System.nanoTime()
-                val warnings = mutableListOf<String>()
-                var refreshState: SnapshotRefreshState
-
-                try {
-                    simulatedSnapshotBuildFailure?.invoke()
-                    val activeBundles = repository.loadActiveTopicStorageBundlesFromDao(dao)
-                    if (activeBundles.isEmpty()) {
-                        throw IllegalStateException("Active topic bundles from database are empty after commit.")
-                    }
-                    repository.publishNewSnapshotFromBundles(
-                        bundles = activeBundles,
-                        affectedTopicIds = affectedTopicIds,
-                        affectedPackId = parsedPack.packId
-                    )
-                    refreshState = SnapshotRefreshState.REFRESHED_ATOMICALLY
-                } catch (initialSnapshotError: Throwable) {
-                    // Attempt automatic recovery from the committed database state
-                    val recovered = try {
-                        simulatedRecoveryFailure?.invoke()
-                        val recoveryBundles = repository.loadActiveTopicStorageBundlesFromDao(dao)
-                        if (recoveryBundles.isEmpty()) {
-                            false
-                        } else {
-                            repository.publishNewSnapshotFromBundles(
-                                bundles = recoveryBundles,
-                                affectedTopicIds = affectedTopicIds,
-                                affectedPackId = parsedPack.packId
-                            )
-                            true
-                        }
-                    } catch (_: Throwable) {
-                        false
-                    }
-
-                    if (recovered) {
-                        refreshState = SnapshotRefreshState.RECOVERED_FROM_DATABASE
-                        warnings.add(
-                            "Initial snapshot build encountered an error (${initialSnapshotError.message}); automatic recovery from database succeeded."
-                        )
-                    } else {
-                        refreshState = SnapshotRefreshState.FAILED_PREVIOUS_SNAPSHOT_RETAINED
-                        val snapshotMs = (System.nanoTime() - snapshotStartNanos) / 1_000_000L
+                    if (hashErrors.isNotEmpty()) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
                         val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
-                        return@withLock KnowledgePackImportResult(
-                            status = KnowledgePackImportStatus.SNAPSHOT_REFRESH_FAILURE,
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.HASH_MISMATCH,
                             packId = parsedPack.packId,
                             packVersion = parsedPack.packVersion,
                             contentVersion = parsedPack.contentVersion,
-                            importedTopicCount = if (isUpdatingExistingPack) 0 else parsedPack.topics.size,
-                            updatedTopicCount = if (isUpdatingExistingPack) parsedPack.topics.size else 0,
+                            rejectedTopicCount = parsedPack.topics.size,
                             activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
                             rawBytesSha256 = rawSha256,
                             logicalContentSha256 = logicalSha256,
-                            snapshotRefreshState = refreshState,
-                            errors = listOf(
-                                "Database transaction committed, but snapshot refresh and automatic recovery both failed: ${initialSnapshotError.message}. Previous valid snapshot was retained."
-                            ),
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = hashErrors,
                             metrics = KnowledgePackImportMetrics(
                                 parseTimeMs = parseTimeMs,
-                                validationTimeMs = validationTimeMs,
-                                storageTransactionTimeMs = storageTimeMs,
-                                snapshotRebuildTimeMs = snapshotMs,
+                                validationTimeMs = valMs,
                                 totalImportTimeMs = totalMs,
                                 inputByteCount = parsedPack.rawByteSize,
                                 detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
                             )
                         )
                     }
-                }
 
-                val snapshotRebuildTimeMs = (System.nanoTime() - snapshotStartNanos) / 1_000_000L
-                val totalImportTimeMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                    // 3. Check Core Seed Protection BEFORE any other conflict/storage logic
+                    val coreProtectionErrors = checkCoreProtection(parsedPack)
+                    if (coreProtectionErrors.isNotEmpty()) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.CORE_PROTECTION_VIOLATION,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = coreProtectionErrors,
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = valMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
 
-                val finalStatus = if (isUpdatingExistingPack) {
-                    KnowledgePackImportStatus.SUCCESS_UPDATED
-                } else {
-                    KnowledgePackImportStatus.SUCCESS_IMPORTED
-                }
+                    // 4. Intra-pack duplicate & semantic validation
+                    val duplicateTopicErrors = checkIntraPackDuplicateTopics(parsedPack)
+                    if (duplicateTopicErrors.isNotEmpty()) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.DUPLICATE_CONFLICT,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = duplicateTopicErrors,
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = valMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
 
-                KnowledgePackImportResult(
-                    status = finalStatus,
-                    packId = parsedPack.packId,
-                    packVersion = parsedPack.packVersion,
-                    contentVersion = parsedPack.contentVersion,
-                    importedTopicCount = if (isUpdatingExistingPack) 0 else parsedPack.topics.size,
-                    updatedTopicCount = if (isUpdatingExistingPack) parsedPack.topics.size else 0,
-                    skippedTopicCount = 0,
-                    rejectedTopicCount = 0,
-                    activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
-                    rawBytesSha256 = rawSha256,
-                    logicalContentSha256 = logicalSha256,
-                    snapshotRefreshState = refreshState,
-                    warnings = warnings,
-                    metrics = KnowledgePackImportMetrics(
-                        parseTimeMs = parseTimeMs,
-                        validationTimeMs = validationTimeMs,
-                        storageTransactionTimeMs = storageTimeMs,
-                        snapshotRebuildTimeMs = snapshotRebuildTimeMs,
-                        totalImportTimeMs = totalImportTimeMs,
-                        inputByteCount = parsedPack.rawByteSize,
-                        detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                    val preValidationErrors = validateParsedPackSemantics(parsedPack)
+                    if (preValidationErrors.isNotEmpty()) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.VALIDATION_FAILED,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = preValidationErrors,
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = valMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
+
+                    val dao = database.knowledgeDao()
+
+                    // Ensure core seed is persisted in Room so active winner resolution and reference checks
+                    // always see the 11 protected core seed topics in the database.
+                    val seedReady = runCatching {
+                        repository.ensureCoreSeedPersistedInDatabase()
+                    }.getOrDefault(false)
+                    if (!seedReady) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.STORAGE_FAILURE,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = listOf("Database failed to verify or initialize core_seed_pack prior to import."),
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = valMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
+
+                    // 5. Check Existing Pack in Room for Idempotency / Version Progression / Conflict
+                    val existingPack = runCatching { dao.getPackMetadataById(parsedPack.packId) }.getOrNull()
+                    val existingHeaders = if (existingPack != null) {
+                        runCatching { dao.getTopicHeadersByPackOrdered(parsedPack.packId) }.getOrDefault(emptyList())
+                    } else {
+                        emptyList()
+                    }
+                    val isUpdatingExistingPack = existingPack != null
+
+                    if (existingPack != null) {
+                        val existingMaxContentVersion = existingHeaders.maxOfOrNull { it.contentVersion }
+                            ?: existingPack.packVersion
+                        val storedChecksum = existingPack.sha256Checksum
+                        val isIdenticalChecksum = storedChecksum.equals(logicalSha256, ignoreCase = true) ||
+                            storedChecksum.equals(rawSha256, ignoreCase = true)
+
+                        when {
+                            // Exact same version and identical content/checksum -> ALREADY_IMPORTED
+                            // If a previous import committed the DB transaction but failed during snapshot rebuild/publish,
+                            // recover the stale snapshot from the database WITHOUT duplicating the DB transaction!
+                            parsedPack.packVersion == existingPack.packVersion &&
+                                parsedPack.contentVersion == existingMaxContentVersion &&
+                                isIdenticalChecksum -> {
+                                val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                                val needsSnapshotSync = repository.isSnapshotStale ||
+                                    !isCommittedPackReflectedInSnapshot(parsedPack, existingPack, existingHeaders, dao)
+
+                                if (!needsSnapshotSync) {
+                                    val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                                    return@withRepositoryMutationLock KnowledgePackImportResult(
+                                        status = KnowledgePackImportStatus.ALREADY_IMPORTED,
+                                        packId = parsedPack.packId,
+                                        packVersion = parsedPack.packVersion,
+                                        contentVersion = parsedPack.contentVersion,
+                                        importedTopicCount = 0,
+                                        updatedTopicCount = 0,
+                                        skippedTopicCount = parsedPack.topics.size,
+                                        rejectedTopicCount = 0,
+                                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                                        committedGeneration = repository.committedGeneration,
+                                        publishedGeneration = repository.publishedGeneration,
+                                        databaseCommitted = true,
+                                        rawBytesSha256 = rawSha256,
+                                        logicalContentSha256 = logicalSha256,
+                                        snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                                        warnings = listOf(
+                                            "Pack '${parsedPack.packId}' (v${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is already imported with matching SHA-256."
+                                        ),
+                                        metrics = KnowledgePackImportMetrics(
+                                            parseTimeMs = parseTimeMs,
+                                            validationTimeMs = valMs,
+                                            totalImportTimeMs = totalMs,
+                                            inputByteCount = parsedPack.rawByteSize,
+                                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                                        )
+                                    )
+                                }
+
+                                val snapshotStartNanos = System.nanoTime()
+                                val affectedIdsForSync = existingHeaders.map { it.topicId }.toSet().ifEmpty {
+                                    parsedPack.topics.map { it.topicId }.toSet()
+                                }
+                                val targetGen = maxOf(
+                                    repository.committedGeneration,
+                                    repository.publishedGeneration + 1L
+                                )
+                                val syncWarnings = mutableListOf(
+                                    "Pack '${parsedPack.packId}' (v${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is already committed in database with matching SHA-256; recovered stale in-memory snapshot without duplicating database writes."
+                                )
+                                var initialSyncFailureMessage: String? = null
+                                val synced = try {
+                                    simulatedSnapshotBuildFailure?.invoke()
+                                    val activeBundles = repository.loadActiveTopicStorageBundlesFromDao(dao)
+                                    if (activeBundles.isEmpty()) {
+                                        throw IllegalStateException("Active topic bundles from database are empty during idempotent snapshot recovery.")
+                                    }
+                                    repository.publishNewSnapshotFromBundles(
+                                        bundles = activeBundles,
+                                        affectedTopicIds = affectedIdsForSync,
+                                        affectedPackId = parsedPack.packId,
+                                        targetGenerationOverride = targetGen
+                                    )
+                                    true
+                                } catch (initialSyncError: Throwable) {
+                                    initialSyncFailureMessage = initialSyncError.message
+                                    val recoveredOnRetry = try {
+                                        simulatedRecoveryFailure?.invoke()
+                                        val recoveryBundles = repository.loadActiveTopicStorageBundlesFromDao(dao)
+                                        if (recoveryBundles.isEmpty()) {
+                                            false
+                                        } else {
+                                            repository.publishNewSnapshotFromBundles(
+                                                bundles = recoveryBundles,
+                                                affectedTopicIds = affectedIdsForSync,
+                                                affectedPackId = parsedPack.packId,
+                                                targetGenerationOverride = targetGen
+                                            )
+                                            true
+                                        }
+                                    } catch (_: Throwable) {
+                                        false
+                                    }
+                                    if (recoveredOnRetry) {
+                                        syncWarnings.add(
+                                            "Initial snapshot recovery encountered an error (${initialSyncError.message}); secondary recovery from database succeeded."
+                                        )
+                                    }
+                                    recoveredOnRetry
+                                }
+
+                                val snapshotMs = (System.nanoTime() - snapshotStartNanos) / 1_000_000L
+                                val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                                if (synced) {
+                                    return@withRepositoryMutationLock KnowledgePackImportResult(
+                                        status = KnowledgePackImportStatus.ALREADY_IMPORTED,
+                                        packId = parsedPack.packId,
+                                        packVersion = parsedPack.packVersion,
+                                        contentVersion = parsedPack.contentVersion,
+                                        importedTopicCount = 0,
+                                        updatedTopicCount = 0,
+                                        skippedTopicCount = parsedPack.topics.size,
+                                        rejectedTopicCount = 0,
+                                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                                        committedGeneration = repository.committedGeneration,
+                                        publishedGeneration = repository.publishedGeneration,
+                                        databaseCommitted = true,
+                                        rawBytesSha256 = rawSha256,
+                                        logicalContentSha256 = logicalSha256,
+                                        snapshotRefreshState = SnapshotRefreshState.RECOVERED_FROM_DATABASE,
+                                        warnings = syncWarnings,
+                                        metrics = KnowledgePackImportMetrics(
+                                            parseTimeMs = parseTimeMs,
+                                            validationTimeMs = valMs,
+                                            snapshotRebuildTimeMs = snapshotMs,
+                                            totalImportTimeMs = totalMs,
+                                            inputByteCount = parsedPack.rawByteSize,
+                                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                                        )
+                                    )
+                                } else {
+                                    return@withRepositoryMutationLock KnowledgePackImportResult(
+                                        status = KnowledgePackImportStatus.SNAPSHOT_REFRESH_FAILURE,
+                                        packId = parsedPack.packId,
+                                        packVersion = parsedPack.packVersion,
+                                        contentVersion = parsedPack.contentVersion,
+                                        importedTopicCount = 0,
+                                        updatedTopicCount = 0,
+                                        skippedTopicCount = parsedPack.topics.size,
+                                        rejectedTopicCount = 0,
+                                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                                        committedGeneration = repository.committedGeneration,
+                                        publishedGeneration = repository.publishedGeneration,
+                                        databaseCommitted = true,
+                                        rawBytesSha256 = rawSha256,
+                                        logicalContentSha256 = logicalSha256,
+                                        snapshotRefreshState = SnapshotRefreshState.FAILED_PREVIOUS_SNAPSHOT_RETAINED,
+                                        errors = listOf(
+                                            "Pack '${parsedPack.packId}' is already committed in database, but snapshot recovery failed: ${initialSyncFailureMessage ?: "unknown error"}. Previous valid snapshot was retained."
+                                        ),
+                                        metrics = KnowledgePackImportMetrics(
+                                            parseTimeMs = parseTimeMs,
+                                            validationTimeMs = valMs,
+                                            snapshotRebuildTimeMs = snapshotMs,
+                                            totalImportTimeMs = totalMs,
+                                            inputByteCount = parsedPack.rawByteSize,
+                                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                                        )
+                                    )
+                                }
+                            }
+
+                            // Same version (packVersion + contentVersion) but different content -> DUPLICATE_CONFLICT
+                            parsedPack.packVersion == existingPack.packVersion &&
+                                parsedPack.contentVersion == existingMaxContentVersion &&
+                                !isIdenticalChecksum -> {
+                                val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                                val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                                return@withRepositoryMutationLock KnowledgePackImportResult(
+                                    status = KnowledgePackImportStatus.DUPLICATE_CONFLICT,
+                                    packId = parsedPack.packId,
+                                    packVersion = parsedPack.packVersion,
+                                    contentVersion = parsedPack.contentVersion,
+                                    rejectedTopicCount = parsedPack.topics.size,
+                                    activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                                    committedGeneration = repository.committedGeneration,
+                                    publishedGeneration = repository.publishedGeneration,
+                                    databaseCommitted = false,
+                                    rawBytesSha256 = rawSha256,
+                                    logicalContentSha256 = logicalSha256,
+                                    snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                                    errors = listOf(
+                                        "Conflict for pack '${parsedPack.packId}': version (packVersion=${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is already imported with a different SHA-256 checksum."
+                                    ),
+                                    metrics = KnowledgePackImportMetrics(
+                                        parseTimeMs = parseTimeMs,
+                                        validationTimeMs = valMs,
+                                        totalImportTimeMs = totalMs,
+                                        inputByteCount = parsedPack.rawByteSize,
+                                        detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                                    )
+                                )
+                            }
+
+                            // Older packVersion or older contentVersion -> DUPLICATE_CONFLICT
+                            parsedPack.packVersion < existingPack.packVersion ||
+                                (parsedPack.packVersion == existingPack.packVersion &&
+                                    parsedPack.contentVersion < existingMaxContentVersion) -> {
+                                val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                                val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                                return@withRepositoryMutationLock KnowledgePackImportResult(
+                                    status = KnowledgePackImportStatus.DUPLICATE_CONFLICT,
+                                    packId = parsedPack.packId,
+                                    packVersion = parsedPack.packVersion,
+                                    contentVersion = parsedPack.contentVersion,
+                                    rejectedTopicCount = parsedPack.topics.size,
+                                    activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                                    committedGeneration = repository.committedGeneration,
+                                    publishedGeneration = repository.publishedGeneration,
+                                    databaseCommitted = false,
+                                    rawBytesSha256 = rawSha256,
+                                    logicalContentSha256 = logicalSha256,
+                                    snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                                    errors = listOf(
+                                        "Downgrade rejected for pack '${parsedPack.packId}': incoming version (packVersion=${parsedPack.packVersion}, contentVersion=${parsedPack.contentVersion}) is older than installed version (packVersion=${existingPack.packVersion}, contentVersion=$existingMaxContentVersion)."
+                                    ),
+                                    metrics = KnowledgePackImportMetrics(
+                                        parseTimeMs = parseTimeMs,
+                                        validationTimeMs = valMs,
+                                        totalImportTimeMs = totalMs,
+                                        inputByteCount = parsedPack.rawByteSize,
+                                        detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // 6. Validate Topic Reference Integrity (intra-pack, active snapshot, inactive packs, & removed dependents)
+                    val referenceValidation = validateReferenceIntegrity(
+                        parsedPack = parsedPack,
+                        existingHeadersForSamePack = existingHeaders,
+                        dao = dao
                     )
-                )
+                    if (referenceValidation.errors.isNotEmpty()) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.REFERENCE_INVALID,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = referenceValidation.errors,
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = valMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
+
+                    // 7. Convert Parsed DTOs to Room Entities & Validate via KnowledgeValidator
+                    val packEntity = buildPackMetadataEntity(parsedPack, logicalSha256)
+                    val topicBundles = try {
+                        buildTopicStorageBundles(parsedPack, rawSha256, logicalSha256)
+                    } catch (convError: Throwable) {
+                        val valMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.VALIDATION_FAILED,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = listOf("Failed to build storage entities: ${convError.message}"),
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = valMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
+
+                    val validatorResult = KnowledgeValidator.validatePackBundles(
+                        pack = packEntity,
+                        bundles = topicBundles,
+                        referenceTopicIds = referenceValidation.effectiveActiveTopicIdsAfterImport,
+                        enforceCoreTopicProtection = true
+                    )
+                    val validationTimeMs = (System.nanoTime() - validationStartNanos) / 1_000_000L
+
+                    if (!validatorResult.isValid) {
+                        val mappedStatus = classifyValidatorIssues(validatorResult.issues)
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = mappedStatus,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = validatorResult.issues.map {
+                                "[${it.category}] ${it.field}(${it.recordIdentifier ?: "pack"}): ${it.message}"
+                            },
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = validationTimeMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
+
+                    // 8. Execute Atomic Database Transaction
+                    val storageStartNanos = System.nanoTime()
+                    val affectedTopicIds: Set<String> = try {
+                        database.withTransaction {
+                            val affected = dao.upsertPackWithTopicsTransactional(packEntity, topicBundles)
+                            simulatedMidTransactionFailure?.invoke()
+                            affected
+                        }
+                    } catch (txError: Throwable) {
+                        val storageMs = (System.nanoTime() - storageStartNanos) / 1_000_000L
+                        val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                        return@withRepositoryMutationLock KnowledgePackImportResult(
+                            status = KnowledgePackImportStatus.STORAGE_FAILURE,
+                            packId = parsedPack.packId,
+                            packVersion = parsedPack.packVersion,
+                            contentVersion = parsedPack.contentVersion,
+                            rejectedTopicCount = parsedPack.topics.size,
+                            activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                            committedGeneration = repository.committedGeneration,
+                            publishedGeneration = repository.publishedGeneration,
+                            databaseCommitted = false,
+                            rawBytesSha256 = rawSha256,
+                            logicalContentSha256 = logicalSha256,
+                            snapshotRefreshState = SnapshotRefreshState.NOT_MODIFIED,
+                            errors = listOf("Atomic database transaction failed and was rolled back: ${txError.message}"),
+                            metrics = KnowledgePackImportMetrics(
+                                parseTimeMs = parseTimeMs,
+                                validationTimeMs = validationTimeMs,
+                                storageTransactionTimeMs = storageMs,
+                                totalImportTimeMs = totalMs,
+                                inputByteCount = parsedPack.rawByteSize,
+                                detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                            )
+                        )
+                    }
+                    val storageTimeMs = (System.nanoTime() - storageStartNanos) / 1_000_000L
+                    val committedGen = repository.recordCommittedDatabaseMutation(
+                        affectedTopicIds = affectedTopicIds,
+                        affectedPackId = parsedPack.packId
+                    )
+
+                    // 9. Rebuild & Publish Active Snapshot from Committed DB State (with Automatic Recovery)
+                    val snapshotStartNanos = System.nanoTime()
+                    val warnings = mutableListOf<String>()
+                    var refreshState: SnapshotRefreshState
+
+                    try {
+                        simulatedSnapshotBuildFailure?.invoke()
+                        val activeBundles = repository.loadActiveTopicStorageBundlesFromDao(dao)
+                        if (activeBundles.isEmpty()) {
+                            throw IllegalStateException("Active topic bundles from database are empty after commit.")
+                        }
+                        repository.publishNewSnapshotFromBundles(
+                            bundles = activeBundles,
+                            affectedTopicIds = affectedTopicIds,
+                            affectedPackId = parsedPack.packId,
+                            targetGenerationOverride = committedGen
+                        )
+                        refreshState = SnapshotRefreshState.REFRESHED_ATOMICALLY
+                    } catch (initialSnapshotError: Throwable) {
+                        // Attempt automatic recovery from the committed database state
+                        val recovered = try {
+                            simulatedRecoveryFailure?.invoke()
+                            val recoveryBundles = repository.loadActiveTopicStorageBundlesFromDao(dao)
+                            if (recoveryBundles.isEmpty()) {
+                                false
+                            } else {
+                                repository.publishNewSnapshotFromBundles(
+                                    bundles = recoveryBundles,
+                                    affectedTopicIds = affectedTopicIds,
+                                    affectedPackId = parsedPack.packId,
+                                    targetGenerationOverride = committedGen
+                                )
+                                true
+                            }
+                        } catch (_: Throwable) {
+                            false
+                        }
+
+                        if (recovered) {
+                            refreshState = SnapshotRefreshState.RECOVERED_FROM_DATABASE
+                            warnings.add(
+                                "Initial snapshot build encountered an error (${initialSnapshotError.message}); automatic recovery from database succeeded."
+                            )
+                        } else {
+                            refreshState = SnapshotRefreshState.FAILED_PREVIOUS_SNAPSHOT_RETAINED
+                            val snapshotMs = (System.nanoTime() - snapshotStartNanos) / 1_000_000L
+                            val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+                            return@withRepositoryMutationLock KnowledgePackImportResult(
+                                status = KnowledgePackImportStatus.SNAPSHOT_REFRESH_FAILURE,
+                                packId = parsedPack.packId,
+                                packVersion = parsedPack.packVersion,
+                                contentVersion = parsedPack.contentVersion,
+                                importedTopicCount = if (isUpdatingExistingPack) 0 else parsedPack.topics.size,
+                                updatedTopicCount = if (isUpdatingExistingPack) parsedPack.topics.size else 0,
+                                activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                                committedGeneration = repository.committedGeneration,
+                                publishedGeneration = repository.publishedGeneration,
+                                databaseCommitted = true,
+                                rawBytesSha256 = rawSha256,
+                                logicalContentSha256 = logicalSha256,
+                                snapshotRefreshState = refreshState,
+                                errors = listOf(
+                                    "Database transaction committed, but snapshot refresh and automatic recovery both failed: ${initialSnapshotError.message}. Previous valid snapshot was retained."
+                                ),
+                                metrics = KnowledgePackImportMetrics(
+                                    parseTimeMs = parseTimeMs,
+                                    validationTimeMs = validationTimeMs,
+                                    storageTransactionTimeMs = storageTimeMs,
+                                    snapshotRebuildTimeMs = snapshotMs,
+                                    totalImportTimeMs = totalMs,
+                                    inputByteCount = parsedPack.rawByteSize,
+                                    detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                                )
+                            )
+                        }
+                    }
+
+                    val snapshotRebuildTimeMs = (System.nanoTime() - snapshotStartNanos) / 1_000_000L
+                    val totalImportTimeMs = (System.nanoTime() - totalStartNanos) / 1_000_000L
+
+                    val finalStatus = if (isUpdatingExistingPack) {
+                        KnowledgePackImportStatus.SUCCESS_UPDATED
+                    } else {
+                        KnowledgePackImportStatus.SUCCESS_IMPORTED
+                    }
+
+                    KnowledgePackImportResult(
+                        status = finalStatus,
+                        packId = parsedPack.packId,
+                        packVersion = parsedPack.packVersion,
+                        contentVersion = parsedPack.contentVersion,
+                        importedTopicCount = if (isUpdatingExistingPack) 0 else parsedPack.topics.size,
+                        updatedTopicCount = if (isUpdatingExistingPack) parsedPack.topics.size else 0,
+                        skippedTopicCount = 0,
+                        rejectedTopicCount = 0,
+                        activeWinnerCountInSnapshot = repository.currentSnapshot.topicCount,
+                        committedGeneration = repository.committedGeneration,
+                        publishedGeneration = repository.publishedGeneration,
+                        databaseCommitted = true,
+                        rawBytesSha256 = rawSha256,
+                        logicalContentSha256 = logicalSha256,
+                        snapshotRefreshState = refreshState,
+                        warnings = warnings,
+                        metrics = KnowledgePackImportMetrics(
+                            parseTimeMs = parseTimeMs,
+                            validationTimeMs = validationTimeMs,
+                            storageTransactionTimeMs = storageTimeMs,
+                            snapshotRebuildTimeMs = snapshotRebuildTimeMs,
+                            totalImportTimeMs = totalImportTimeMs,
+                            inputByteCount = parsedPack.rawByteSize,
+                            detailCacheSizeAfterImport = repository.cache.snapshotStats().detailStats.entryCount
+                        )
+                    )
+                }
             }
         }
     }
@@ -862,6 +1037,41 @@ class KnowledgePackImporter(
         return errors
     }
 
+    private suspend fun isCommittedPackReflectedInSnapshot(
+        parsedPack: ParsedKnowledgePackV1,
+        existingPack: KnowledgePackMetadataEntity,
+        existingHeaders: List<KnowledgeTopicHeaderEntity>,
+        dao: KnowledgeDao
+    ): Boolean {
+        if (existingPack.packPriority < 0) {
+            return true
+        }
+        val activeHeadersInDb = runCatching {
+            dao.getAllActiveTopicHeadersOrdered().associateBy { it.topicId }
+        }.getOrDefault(emptyMap())
+        if (activeHeadersInDb.isEmpty()) {
+            return false
+        }
+        val snap = repository.currentSnapshot
+        val topicIdsToCheck = existingHeaders.map { it.topicId }.ifEmpty {
+            parsedPack.topics.map { it.topicId }
+        }
+        for (topicId in topicIdsToCheck) {
+            val dbWinner = activeHeadersInDb[topicId] ?: continue
+            val snapIdentity = snap.activeTopicIdentitiesById[topicId] ?: return false
+            val snapTopic = snap.topicsById[topicId] ?: return false
+            if (snapIdentity.packId != dbWinner.packId ||
+                snapIdentity.contentVersion != dbWinner.contentVersion ||
+                snapIdentity.packPriority != dbWinner.packPriority ||
+                snapTopic.arabicSummary != dbWinner.arabicSummary ||
+                snapTopic.englishSummary != dbWinner.englishSummary
+            ) {
+                return false
+            }
+        }
+        return true
+    }
+
     private data class ReferenceValidationOutcome(
         val effectiveActiveTopicIdsAfterImport: Set<String>,
         val errors: List<String>
@@ -874,7 +1084,11 @@ class KnowledgePackImporter(
     ): ReferenceValidationOutcome {
         val errors = mutableListOf<String>()
         val incomingTopicIds = parsedPack.topics.map { it.topicId }.toSet()
-        val currentActiveTopicIds = repository.currentSnapshot.topicsById.keys
+        val currentActiveTopicIds = runCatching {
+            dao.getAllActiveTopicHeadersOrdered().map { it.topicId }.toSet()
+        }.getOrDefault(emptySet()).ifEmpty {
+            repository.currentSnapshot.topicsById.keys
+        }
 
         // Identify topics that belonged to an earlier version of this same pack and are being removed
         val previousPackTopicIds = existingHeadersForSamePack.map { it.topicId }.toSet()
