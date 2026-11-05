@@ -860,7 +860,7 @@ class KnowledgePackImporter(
         }
     }
 
-    private fun verifyChecksums(
+    internal fun verifyChecksums(
         rawSha256: String,
         logicalSha256: String,
         expectedSha256: String?,
@@ -897,7 +897,7 @@ class KnowledgePackImporter(
         return errors
     }
 
-    private fun checkCoreProtection(pack: ParsedKnowledgePackV1): List<String> {
+    internal fun checkCoreProtection(pack: ParsedKnowledgePackV1): List<String> {
         val errors = mutableListOf<String>()
         if (pack.packId == SeedKnowledgeCatalog.CORE_SEED_PACK_ID) {
             errors.add("Cannot import or overwrite reserved core packId '${SeedKnowledgeCatalog.CORE_SEED_PACK_ID}'.")
@@ -915,7 +915,7 @@ class KnowledgePackImporter(
         return errors
     }
 
-    private fun checkIntraPackDuplicateTopics(pack: ParsedKnowledgePackV1): List<String> {
+    internal fun checkIntraPackDuplicateTopics(pack: ParsedKnowledgePackV1): List<String> {
         val errors = mutableListOf<String>()
         val seenTopicIds = HashSet<String>()
         for (topic in pack.topics) {
@@ -926,7 +926,7 @@ class KnowledgePackImporter(
         return errors
     }
 
-    private fun validateParsedPackSemantics(pack: ParsedKnowledgePackV1): List<String> {
+    internal fun validateParsedPackSemantics(pack: ParsedKnowledgePackV1): List<String> {
         val errors = mutableListOf<String>()
 
         if (!KnowledgePackSpecificationV1.IDENTIFIER_REGEX.matches(pack.packId)) {
@@ -1072,12 +1072,12 @@ class KnowledgePackImporter(
         return true
     }
 
-    private data class ReferenceValidationOutcome(
+    internal data class ReferenceValidationOutcome(
         val effectiveActiveTopicIdsAfterImport: Set<String>,
         val errors: List<String>
     )
 
-    private suspend fun validateReferenceIntegrity(
+    internal suspend fun validateReferenceIntegrity(
         parsedPack: ParsedKnowledgePackV1,
         existingHeadersForSamePack: List<KnowledgeTopicHeaderEntity>,
         dao: KnowledgeDao
@@ -1196,7 +1196,7 @@ class KnowledgePackImporter(
         }
     }
 
-    private fun buildPackMetadataEntity(
+    internal fun buildPackMetadataEntity(
         parsedPack: ParsedKnowledgePackV1,
         logicalSha256: String
     ): KnowledgePackMetadataEntity {
@@ -1212,7 +1212,7 @@ class KnowledgePackImporter(
         )
     }
 
-    private fun buildTopicStorageBundles(
+    internal fun buildTopicStorageBundles(
         parsedPack: ParsedKnowledgePackV1,
         rawSha256: String,
         logicalSha256: String

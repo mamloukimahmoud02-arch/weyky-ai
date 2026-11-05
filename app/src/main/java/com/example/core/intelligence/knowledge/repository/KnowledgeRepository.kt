@@ -23,6 +23,8 @@ import com.example.core.intelligence.knowledge.importer.KnowledgePackImportResul
 import com.example.core.intelligence.knowledge.importer.KnowledgePackImportStatus
 import com.example.core.intelligence.knowledge.importer.KnowledgePackImporter
 import com.example.core.intelligence.knowledge.importer.SnapshotRefreshState
+import com.example.core.intelligence.knowledge.preview.KnowledgePackImpactPreview
+import com.example.core.intelligence.knowledge.preview.KnowledgePackImpactPreviewService
 import com.example.core.intelligence.knowledge.search.ActiveTopicIdentity
 import com.example.core.intelligence.knowledge.search.InMemorySearchSnapshot
 import com.example.core.intelligence.knowledge.search.KnowledgeSearchResult
@@ -2010,6 +2012,89 @@ class KnowledgeRepository(
             assetPath = assetPath,
             expectedSha256 = expectedSha256
         )
+    }
+
+    /**
+     * Creates a [KnowledgePackImpactPreviewService] bound to this repository and its attached [WeykyKnowledgeDatabase].
+     */
+    fun createKnowledgePackImpactPreviewService(
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImpactPreviewService {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        return KnowledgePackImpactPreviewService(
+            database = db,
+            repository = this,
+            limits = limits,
+            converters = converters,
+            ioDispatcher = ioDispatcher
+        )
+    }
+
+    /**
+     * Previews the impact of importing or updating a knowledge pack from a JSON string.
+     */
+    suspend fun previewPackImport(
+        json: String,
+        expectedSha256: String? = null,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImpactPreview = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        createKnowledgePackImpactPreviewService(limits).previewPackImport(
+            json = json,
+            expectedSha256 = expectedSha256
+        )
+    }
+
+    /**
+     * Previews the impact of disabling/deactivating an installed knowledge pack.
+     */
+    suspend fun previewPackDeactivation(
+        packId: String,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImpactPreview = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        createKnowledgePackImpactPreviewService(limits).previewPackDeactivation(packId)
+    }
+
+    /**
+     * Previews the impact of reactivating a disabled knowledge pack.
+     */
+    suspend fun previewPackReactivation(
+        packId: String,
+        restoredPriorityOverride: Int? = null,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImpactPreview = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        createKnowledgePackImpactPreviewService(limits).previewPackReactivation(packId, restoredPriorityOverride)
+    }
+
+    /**
+     * Previews the impact of changing the priority of an installed knowledge pack.
+     */
+    suspend fun previewPackPriorityChange(
+        packId: String,
+        newPriority: Int,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImpactPreview = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        createKnowledgePackImpactPreviewService(limits).previewPackPriorityChange(packId, newPriority)
+    }
+
+    /**
+     * Previews the impact of deleting an installed knowledge pack.
+     */
+    suspend fun previewPackDeletion(
+        packId: String,
+        limits: KnowledgePackImportLimits = KnowledgePackImportLimits()
+    ): KnowledgePackImpactPreview = withContext(ioDispatcher) {
+        val db = databaseRef.get()
+            ?: throw IllegalStateException("WeykyKnowledgeDatabase is not attached to KnowledgeRepository.")
+        createKnowledgePackImpactPreviewService(limits).previewPackDeletion(packId)
     }
 
     private suspend fun verifyCoreTopicsMatchSeed(
